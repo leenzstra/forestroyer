@@ -6,7 +6,7 @@ Public Class CDependencyTreeNode: Object
 	/// <summary>
 	/// 	Название узла
 	/// </summary>
-	Public name: String; 
+	Public Shared name, name2, name3: String; 
 	
 	/// <summary>
 	/// 	Список зависимых узлов
@@ -23,8 +23,22 @@ Public Class CDependencyTreeNode: Object
 	/// </summary>
 	Public Constructor Create(name: String);
 	Begin
+		Inherited Create(name);
+
+		if True Then
+			a := 5;
+		Elseif False Then
+			a := 6;
+		Elseif 1 = 1 Then
+			a := 7;
+		Else
+			a := 8;
+		end if;
+		
     	Dependencies := New ArrayList.Create;
 		Depth := 0;
+
+		return;
 	End Constructor Create;
 	
 End Class CDependencyTreeNode;

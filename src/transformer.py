@@ -1,5 +1,6 @@
 from lark import v_args, Token
 from lark.visitors import Transformer
+import itertools
 
 
 class ClassDeclarationsTransformer(Transformer):
@@ -35,32 +36,39 @@ class ClassDeclarationsTransformer(Transformer):
         items["field_declarations"] = []
         items["property_declarations"] = []
         items["method_declarations"] = []
+        items["constructor_declarations"] = []
         items["_type"] = "class_body"
 
         for ch in children:
             if isinstance(ch, dict):
                 if ch.get("_type") == "constructor":
-                    items["constructor"] = ch
+                    items["constructor_declarations"].append(ch)
                 elif ch.get("_type") == "field_declaration":
                     items["field_declarations"].append(ch)
                 elif ch.get("_type") == "property_declaration":
                     items["property_declarations"].append(ch)
                 elif ch.get("_type") == "method_declaration":
                     items["method_declarations"].append(ch)
+            if isinstance(ch, list):
+                for item in ch:
+                    if item.get("_type") == "field_declaration":
+                        items["field_declarations"].append(item)
         return items
 
     def constructor(self, children):
         return {
             "_type": "constructor",
             "access_modifier": children[0],
-            "name": children[1],
+            "name": children[2],
+            "parameters": children[3],
+            "body": children[4],
         }
 
     def parameter_list_optional(self, children):
-        return children if children else None
+        return [x for xs in children for x in xs] if children and children[0] else None
 
     def parameter_list(self, children):
-        return children if children else None
+        return [x for xs in children for x in xs]
 
     def parameter(self, children):
         params = []
@@ -93,13 +101,25 @@ class ClassDeclarationsTransformer(Transformer):
         return "Protected Friend"
 
     def field_declaration(self, children):
-        return {
-            "_type": "field_declaration",
-            "access_modifier": children[0],
-            "shared": children[1],
-            "name": children[2],
-            "field_type": children[3],
-        }
+        field_names = []
+        fields = []
+
+        for ch in children:
+            if isinstance(ch, Token) and ch.type == "WORD":
+                field_names.append(ch.value)
+
+        for name in field_names:
+            fields.append(
+                {
+                    "_type": "field_declaration",
+                    "access_modifier": children[0],
+                    "shared": children[1],
+                    "name": name,
+                    "field_type": children[-1],
+                }
+            )
+
+        return fields
 
     def property_declaration(self, children):
         return {
@@ -134,26 +154,39 @@ class ClassDeclarationsTransformer(Transformer):
         }
 
     def statement_list(self, children):
-        items = [
-            
-        ]
         return children  # children
 
     def statement(self, children):
+
+        if children:
+            stmt = children[0]
+            if isinstance(stmt, Token) and stmt.type == "WORD":
+                return {
+                    "_type": "method_call",
+                    "method": stmt.value,
+                    "args": None,
+                }
+
         return children[0] if children else None
 
     def if_statement(self, children):
+        elseifs = []
+
+        for i, ch in enumerate(children):
+            if isinstance(ch, Token) and ch.type == "ELSEIF":
+                elseifs.append(
+                    {
+                        "condition": children[i + 1],
+                        "statements": children[i + 3],
+                    }
+                )
+
         return {
             "_type": "if_statement",
-            "condition": "expression",  # children[1]
+            "condition": children[1],
             "statements": children[3],
-            "elseif": [
-                {
-                    "condition": "expression",
-                    "statements": "statements",
-                }
-            ],
-            "else_statements": children[9],
+            "elseif": elseifs,
+            "else_statements": children[-3],
         }
 
     def assignment_statement(self, children):
@@ -175,6 +208,7 @@ class ClassDeclarationsTransformer(Transformer):
     def return_statement(self, children):
         return {
             "_type": "return_statement",
+            "expression": children[1],
         }
 
     def argument_list(self, children):
@@ -194,7 +228,7 @@ class ClassDeclarationsTransformer(Transformer):
 
         return {
             "_type": "simple_expression",
-            "op": children[1],
+            "op": children[1].value if children[1] is Token else children[1],
             "left": children[0],
             "right": children[2],
         }
@@ -202,7 +236,8 @@ class ClassDeclarationsTransformer(Transformer):
     def type_cast(self, children):
         return {
             "_type": "type_cast",
-            "type": children[1],
+            "expression": children[0],
+            "as_type": children[2],
         }
 
     def type_check(self, children):
@@ -212,13 +247,11 @@ class ClassDeclarationsTransformer(Transformer):
         }
 
     def method_call(self, children):
-        return {
-            "_type": "method_call",
-            "method": children[0],
-            "args": children[1]
-        }
+        return {"_type": "method_call", "method": children[0], "args": children[1]}
 
     def expression(self, children):
+        items = []
+
         return {
             "_type": "expression",
         }
@@ -228,12 +261,44 @@ class ClassDeclarationsTransformer(Transformer):
             "_type": "for_each_statement",
         }
 
+    def for_statement(self, children):
+        return {
+            "_type": "for_statement",
+        }
+
+    def select_block(self, children):
+        return {
+            "_type": "select_block",
+        }
+
+    def try_block(self, children):
+        return {
+            "_type": "try_block",
+        }
+
     def term(self, children):
         return {
             "_type": "term",
         }
 
-    def mul_op(self, children):
+    def factor(self, children):
         return {
-            "_type": "mul_op",
+            "_type": "factor",
+            "op": children[0],
+            "expression": children[1],
+        }
+
+    def mul_op(self, children):
+        return children[0]
+
+    def add_op(self, children):
+        return children[0]
+
+    def unary_op(self, children):
+        return children[0]
+
+    def inherited_call(self, children):
+        return {
+            "_type": "inherited_call",
+            "expression": children[1],
         }

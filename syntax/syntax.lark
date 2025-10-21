@@ -20,7 +20,7 @@ var_block: _VAR variables_list
 variables_list: variable_declaration*
 variable_declaration: WORD ["," WORD]* _COLON TYPE ["=" (LITERAL | ("[" LITERAL ("," LITERAL)* "]"))] _SEMICOLON
 
-field_declaration: [access_modifier] [SHARED] WORD _COLON WORD _SEMICOLON
+field_declaration: [access_modifier] [SHARED] WORD ["," WORD]* _COLON TYPE _SEMICOLON
 
 const_block: [access_modifier] [_CONST] method_const_declaration
 method_const_block: _CONST method_const_declaration*
@@ -35,7 +35,6 @@ statement_list: statement*
 
 statement: (assignment_statement 
     | return_statement 
-    | inherited_call
     | if_statement 
     | compound_statement 
     | for_statement 
@@ -43,9 +42,9 @@ statement: (assignment_statement
     | continue_statement 
     | break_statement 
     | select_block
-    | try_block) _SEMICOLON
+    | try_block
+    | expression) _SEMICOLON
 
-inherited_call: INHERITED atom
 for_statement: FOR assignment_statement TO expression (STEP LITERAL_INTEGER)? DO statement_list END FOR
 foreach_statement: FOR EACH WORD IN expression DO statement_list END FOR
 continue_statement.1: CONTINUE
@@ -56,32 +55,32 @@ try_block: TRY statement_list [EXCEPT ON WORD ":" WORD ("," WORD) DO] [EXCEPT] [
 select_block: SELECT CASE WORD (CASE LITERAL ("," LITERAL)* ("To" LITERAL)* ":" statement_list)* [ELSE statement_list] END SELECT
 
 assignment_statement: atom _ASSIGNMENT expression
-return_statement: RETURN expression?
+return_statement: RETURN [expression]
 compound_statement: BEGIN statement_list END
 
-if_statement: IF expression THEN statement_list [ELSEIF expression THEN statement_list] [ELSE statement_list] END IF
+if_statement: IF expression THEN statement_list (ELSEIF expression THEN statement_list)* (ELSE statement_list)? END IF
 ternary_expression: expression _QUESTION_MARK expression _COLON expression
-type_cast: (AS_KEYWORD TYPE)
-type_check: (IS_KEYWORD TYPE)
 
-?expression: (simple_expression | ternary_expression) (comparison_op expression)? type_cast? type_check?
-?comparison_op: "=" | "<>" | "<" | "<=" | ">" | ">="
+?expression: (simple_expression | ternary_expression | type_cast) (comparison_op expression)?
+?comparison_op: "=" | "<>" | "<" | "<=" | ">" | ">=" | IS_KEYWORD
 
 ?simple_expression: term (add_op term)*
-?add_op: "+" | "-" | OR
+!add_op: "+" | "-" | OR
 ?term: factor (mul_op factor)*
-?mul_op: "*" | "/" | AND | "Mod"i | "Div"i
+!mul_op: "*" | "/" | AND | "Mod"i | "Div"i
 
 ?factor: unary_op factor | atom
 
-?unary_op: "+" | "-" | NOT
+!unary_op: "+" | "-" | NOT
 
+?inherited_call: (INHERITED atom)
 ?constructor_call: NEW atom
 ?method_call: atom "(" argument_list? ")"
 ?member_access: atom "." atom
 ?index_access: atom "[" expression "]"
 
-?atom: WORD | LITERAL | method_call | member_access | index_access | "(" expression ")" | constructor_call
+?atom: WORD | LITERAL | method_call | member_access | index_access | "(" expression ")" | constructor_call | inherited_call
+type_cast: atom AS_KEYWORD TYPE
 
 argument_list: expression ("," expression)*
 
@@ -95,7 +94,7 @@ LITERAL_INTEGER: /[-+]?[0-9][0-9]*|0/
 LITERAL_STRING: /([ubf]?r?|r[ubf])("(?!"").*?(?<!\\)(\\\\)*?"|'(?!'').*?(?<!\\)(\\\\)*?')/i
 LITERAL_BOOLEAN: TRUE | FALSE
 
-CALLABLE.1: SUB | FUNCTION
+CALLABLE.5: SUB | FUNCTION
 
 TYPE: BASE_TYPE | CLASS_TYPE | INTERFACE_TYPE
 INTERFACE_TYPE: "i"i + CLASS_TYPE
@@ -133,8 +132,8 @@ TRUE: "True"i
 FALSE: "False"i
 IF: "If"i
 THEN: "Then"i
-ELSE: "Else"i
-ELSEIF: "Elseif"i
+ELSE.1: "Else"i
+ELSEIF.2: "Elseif"i
 OBJECT: "Object"i
 RETURN: "Return"i
 GET: "Get"i
