@@ -1,0 +1,1032 @@
+/// <summary>
+/// 	Узел дерева зависимостей
+/// </summary>
+Public Class CDependencyTreeNode: Object
+	
+	/// <summary>
+	/// 	Название узла
+	/// </summary>
+	Public name: String; 
+	
+	/// <summary>
+	/// 	Список зависимых узлов
+	/// </summary>
+	Public Dependencies: IArrayList;
+	
+	/// <summary>
+	/// 	Глубина узла (0 - корень, 1+ - узлы)
+	/// </summary>
+	Public Depth: Integer;
+	
+	/// <summary>
+	/// 	Конструктор
+	/// </summary>
+	Public Constructor Create(name: String);
+	Begin
+    	Dependencies := New ArrayList.Create;
+		Depth := 0;
+	End Constructor Create;
+	
+End Class CDependencyTreeNode;
+
+
+
+/// <summary>
+/// 	Дерево зависимостей
+/// </summary>
+Public Class CDependencyTree: Object
+	
+	_root: CDependencyTreeNode; // корень дерева
+	_nodes: IHashtable; // список всех узлов дерева
+	
+	/// <summary>
+	/// 	Конструктор
+	/// </summary>
+	Public Constructor Create;
+	Begin
+		_root := Null;
+		_nodes := New Hashtable.Create;
+	End Constructor Create;
+	
+	/// <summary>
+	/// 	Получение глубины дерева
+	/// </summary>
+	Public Function GetTreeDepth: Integer;
+	Var
+		maxDepth: Integer;
+		node: CDependencyTreeNode;
+	Begin
+		For Each node In _nodes Do
+			If maxDepth < node.Depth Then
+				maxDepth := node.Depth;
+			End If; 	
+		End For;
+		Return maxDepth;
+	End Function GetTreeDepth;
+	
+	/// <summary>
+	/// 	Построение структуры дерева на основе хэш-таблицы зависимостей
+	/// </summary>
+	Public Sub Build(dependencies: IHashtable);
+	Var
+		name, dep: Variant;
+		treeNode, depTreeNode: CDependencyTreeNode;
+		deps: ICollection;
+	Begin
+		// Создаем узлы
+		For Each name In dependencies.Keys Do
+			_nodes.Item(name) := New CDependencyTreeNode.Create(name);
+			
+			deps := dependencies.Item(name);
+			For Each dep In deps Do
+				If Not _nodes.ContainsKey(dep) Then
+					_nodes.Item(dep) := New CDependencyTreeNode.Create(dep);
+				End If;
+			End For;
+		End For;
+
+        a := -1;
+        a := "asd";
+        a := -1.0;
+        a := b;
+		
+		// Указываем зависимости узлов
+		For Each name In dependencies.Keys Do
+			deps := dependencies.Item(name);
+			treeNode := _nodes.Item(name);
+			For Each dep In deps Do
+				depTreeNode := _nodes.Item(dep);
+				treeNode.Dependencies.Add(depTreeNode);
+			End For;
+		End For;
+		
+		// Формирование корня
+		CreateRoot;
+		
+		// Подсчет глубины для каждого узла дерева
+		CalculateDepths;
+	End Sub Build;
+	
+	/// <summary>
+	/// 	Построение структуры дерева на основе графа
+	/// </summary>
+	Public Sub BuildFromGraph(graph: CDependencyGraph);
+	Begin
+		Build(graph.Graph);
+	End Sub BuildFromGraph;
+	
+	/// <summary>
+	/// 	Создание корневого узла
+	/// </summary>
+	Sub CreateRoot;
+	Var
+		nodes: IArrayList;
+	Begin	
+		nodes := New ArrayList.Create;
+		nodes.AddRange(_nodes.Values);
+		
+		_root := New CDependencyTreeNode.Create("ROOT");
+		_root.Dependencies := nodes;
+	End Sub CreateRoot;
+	
+	/// <summary>
+	/// 	Подсчет глубины для узлов дерева
+	/// </summary>
+	Sub CalculateDepths(node: CDependencyTreeNode = Null; depth: Integer = 0);
+	Var
+		child: CDependencyTreeNode;
+	Begin
+		If IsNull(node) Then
+			node := _root;
+		End If;
+		
+		// По умолчанию глубина узла = 0, поэтому минимум 1 раз в это условие зайдет каждая.
+		// Также если у зависимости уже указана глубина, но она оказалась более глубокая, то ставим ее глубже
+		If depth > node.Depth Then
+			node.Depth := depth;
+		End If;
+
+		For Each child In node.Dependencies Do
+			CalculateDepths(child, depth + 1);
+		End For;
+	End Sub CalculateDepths;
+	
+	/// <summary>
+	/// 	Получение узлов дерева по уровням (ключ - глубина, значение - CDependencyTreeNode).
+	/// 	Корень исключается
+	/// </summary>
+	Public Function GetNodesByLevels: IHashtable;
+	Var
+		levelNodes: IHashtable;
+		node: CDependencyTreeNode;
+	Begin
+		levelNodes := New Hashtable.Create;
+		For Each node In _nodes Do
+			If Not levelNodes.ContainsKey(node.Depth) Then
+				levelNodes.Add(node.Depth, New ArrayLIst.Create);
+			End If;
+			(levelNodes.Item(node.Depth) As IArrayList).Add(node);
+		End For;
+		Return levelNodes;
+	End Function GetNodesByLevels;
+	
+	/// <summary>
+	/// 	Вывод дерева в консоль
+	/// </summary>
+	Public Sub Print(writer: IWriter);
+	Var
+		child: CDependencyTreeNode;
+	Begin
+		For Each child In _nodes Do
+			writer.Write(String.Format("{0} {1} [{2}]", String.Space(child.Depth * 2), child.Name, child.Depth));
+		End For;
+	End Sub Print;
+	
+End Class CDependencyTree;
+
+
+
+/// <summary>
+/// 	Граф зависимостей (на основе хэш-таблицы)
+/// </summary>
+Class CDependencyGraph: Object
+	
+	_graph: IHashtable;
+	
+	/// <summary>
+	/// 	Хэш-таблица зависимостей (ключ - объект, значение - множество зависимостей (объектов)).
+	/// 	{ Variant: IHashtable { Variant: True } }
+	/// </summary>
+	Public Property Graph: IHashtable
+		Get Begin Return _graph; End Get
+	End Property Graph;
+	
+	/// <summary>
+	/// 	Множество зависимостей
+	/// </summary>
+	Public Property Dependencies(node: Variant): IHashtable
+		Get Begin Return (_graph.Item(node) As Hashtable); End Get
+		Set Begin _graph.Item(node) := value; End Set
+	End Property Dependencies;
+
+	/// <summary>
+	/// 	Конструктор
+	/// </summary>
+	Public Constructor Create;
+	Begin
+		_graph := New Hashtable.Create;
+	End Constructor Create;
+	
+	Public Sub AddDependency(node, dependency: Variant);
+	Begin
+		AddEmptyNode(node);
+		Dependencies(node).Item(dependency) := True;
+	End Sub AddDependency;
+	
+	/// <summary>
+	/// 	Добавить объект без зависимостей (либо перезаписать)
+	/// </summary>
+	Public Sub AddEmptyNode(node: Variant; replace: Boolean = False);
+	Begin
+		If Not _graph.Contains(node) Or replace Then
+			Dependencies(node) := New Hashtable.Create;
+		End If;
+	End Sub AddEmptyNode;
+	
+	/// <summary>
+	/// 	Получение множества зависимостей объекта в виде списка объектов
+	/// </summary>
+	Public Function GetDependenciesValues(node: Variant): ICollection;
+	Begin
+		AddEmptyNode(node);
+		Return Dependencies(node).Keys;
+	End Function GetDependenciesValues;
+	
+End Class CDependencyGraph;
+
+
+
+/// <summary>
+/// 	Граф зависимостей таблиц
+/// </summary>
+Class CTableDependencyGraph: CDependencyGraph
+	
+	_tables: IArrayList; // [ITable] список всех таблиц, на основе которых строится граф
+	_visited: IHashtable; // посещенные таблицы, антицикл
+	_tableInfos: IArrayList; // [DbObjectInfo] список описаний исходных таблиц
+	_db: IDatabase; // БД, к которой относятся все таблицы
+	
+	/// <summary>
+	/// 	Конструктор
+	/// </summary>
+	/// <param name="tableInfos">Список описаний выбранных таблиц (DbObjectInfo)</param>
+	/// <param name="db">БД</param>
+	Public Constructor Create(tableInfos: IArrayList; db: IDatabase);
+	Begin
+		Inherited Create;
+		
+		_visited := New Hashtable.Create;
+		_tables := New ArrayList.Create;
+		_tableInfos := tableInfos;
+		_db := db;
+	End Constructor Create;
+	
+	/// <summary>
+	/// 	Получение информации о предоставленных таблицах
+	/// </summary>
+	Sub PrepareProvidedTables;
+	Var
+		info: DbObjectInfo;
+	Begin
+		For Each info In _tableInfos Do
+			_tables.Add(info.MbDesc.Bind As ITable);
+		End For;
+	End Sub PrepareProvidedTables;
+	
+	/// <summary>
+	/// 	Получение информации о всех таблицах БД (которые есть в репозитории)
+	/// </summary>
+	Sub PrepareAllTables;
+	Var
+		descriptors: IMetabaseObjectDescriptors;
+		desc: IMetabaseObjectDescriptor;
+		filtered: IArrayList;
+	Begin
+		// поиск всех таблиц от корня репо
+		descriptors := GetObjectChildrenOfClass(MbExt.Item(0), AsIntArray(MetabaseObjectClass.KE_CLASS_TABLE, MetabaseObjectClass.KE_CLASS_EXTERNTABLE));
+		// фильтр таблиц по БД
+		filtered := FilterDescriptorsByDb(descriptors, _db);
+		For Each desc In filtered Do
+			_tables.Add(desc.Bind As ITable);
+		End For;
+	End Sub PrepareAllTables;
+	
+	/// <summary>
+	/// 	Построение графа зависимостей
+	/// </summary>
+	/// <param name="recursive">Рекурсивный поиск зависимостей</param>
+	/// <param name="onlyProvidedTables">Признак поиска зависимостей только среди предоставленных таблиц</param>
+	Public Sub BuildDependencyGraph(recursive, onlyProvidedTables: Boolean);
+	Var
+		tableInfo: DbObjectInfo;
+	Begin
+		If onlyProvidedTables Then
+			PrepareProvidedTables;
+		Else
+			PrepareAllTables;
+		End If;
+
+		For Each tableInfo In _tableInfos Do
+			FindTableDependencies(tableInfo.MbDesc.Bind As ITable, recursive);
+		End For;
+	End Sub BuildDependencyGraph;
+	
+	/// <summary>
+	/// 	Поиск зависимых таблиц для указанной таблицы
+	/// </summary>
+	Sub FindTableDependencies(table: ITable; recursive: Boolean);
+	Var
+		fk: ITableForeignKey;
+		dbName, fkTableDbName: String;
+		tmpTable, fkTable: ITable;
+	Begin
+		If IsNull(table) Then
+			Return;
+		End If;
+		
+		// Физическое имя таблицы со схемой
+		dbName := CreateTableDbName(table);
+		AddEmptyNode(dbName);
+		_visited.Item(dbName) := table;
+		
+		For Each fk In table.ForeignKeys Do
+			// поиск зависимой таблицы по внешнему ключу
+			For Each tmpTable In _tables Do
+				If String.ToLower(tmpTable.CaseSensitiveNativeName) = String.ToLower(fk.RTable) Then
+					fkTable := tmpTable;
+					Break;
+				End If;
+			End For;
+			
+			// Если зависимой таблицы нет в репо (только в БД), то не добавляем ее
+			If IsNull(fkTable) Then
+				Continue;
+			End If;
+			
+			// Добавляем зависимость в граф
+			fkTableDbName := CreateTableDbName(fkTable);
+			AddDependency(dbName, fkTableDbName);
+			
+			// Если еще не посещали зависимую таблицу, то рекурсивно ищем зависимости для нее
+			If Not _visited.Contains(fkTableDbName) And recursive Then
+				FindTableDependencies(fkTable, recursive);
+			End If;
+		End For;
+	End Sub FindTableDependencies;
+	
+	/// <summary>
+	/// 	Получить список всех таблиц в графе (ITable)
+	/// </summary>
+	Public Function GetTables: IArrayList;
+	Var
+		tables: IArrayList;
+		table: ITable;
+	Begin
+		tables := New ArrayList.Create;
+		For Each table In _visited.Values Do
+			tables.Add(table);
+		End For;
+		Return tables;
+	End Function GetTables;
+	
+End Class CTableDependencyGraph;
+
+/// <summary>
+/// 	Обновление списка информации о таблицах, добавив зависимые таблицы для указанной БД
+/// </summary>
+/// <param name="tableInfos">Список информации о таблицах (DbObjectInfo)</param>
+/// <param name="db">БД</param>
+/// <returns>Обновленный список информации о таблицах</returns>
+Public Function GetTablesWithDependencies(tableInfos: IArrayList; db: IDatabase): IArrayList;
+Var
+	graph: CTableDependencyGraph;
+	tables, updatedTableInfos: IArrayList;
+	table: ITable;
+	tableInfo: DbObjectInfo;
+Begin
+	// Строим граф зависимостей таблиц
+	graph := New CTableDependencyGraph.Create(tableInfos, db);
+	graph.BuildDependencyGraph(True, False);
+	
+	// Получаем все таблицы в графе
+	tables := graph.GetTables;
+	
+	// Трансформируем ITable в DbObjectInfo
+	updatedTableInfos := New ArrayList.Create;
+	For Each table In tables Do
+		tableInfo := New DbObjectInfo.Create;
+		tableInfo.DbName := CreateTableDbName(table);
+		tableInfo.MbDesc := table As IMetabaseObjectDescriptor;
+		updatedTableInfos.Add(tableInfo);
+	End For;
+	
+	Return updatedTableInfos;
+End Function GetTablesWithDependencies;
+
+/// <summary>
+/// 	Сортировка таблицы в порядке зависимости для указанной БД
+/// </summary>
+/// <param name="tableInfos">Список информации о таблицах (DbObjectInfo)</param>
+/// <param name="db">БД</param>
+/// <returns>Обновленный список информации о таблицах</returns>
+Public Function GetDependenceOrderedTables(tableInfos: IArrayList; db: IDatabase): IArrayList;
+Var
+	graph: CTableDependencyGraph;
+	tree: CDependencyTree;
+	tableDbNameMapping, leveledNodes: IHashtable;
+	tables, orderedDbNames, orderedTables, nodes: IArrayList;
+	node: CDependencyTreeNode;
+	table: ITable;
+	level: Integer;
+	dbName: String;
+	tableObject: DbObjectInfo;
+Begin
+	// Строим граф зависимостей таблиц и получаем все таблицы
+	graph := New CTableDependencyGraph.Create(tableInfos, db);
+	graph.BuildDependencyGraph(True, True);
+	tables := graph.GetTables;
+	
+	// Строим дерево
+	tree := New CDependencyTree.Create;
+	tree.Build(graph.Graph);
+	//tree.Print;
+	
+	// Формируем список имен таблиц в порядке зависимости
+	orderedDbNames := New ArrayList.Create;
+	leveledNodes := tree.GetNodesByLevels;
+	For level := tree.GetTreeDepth To 0 Step -1 Do
+		nodes := leveledNodes.Item(level);
+		If Not IsNull(nodes) Then
+			For Each node In nodes Do
+				orderedDbNames.Add(node.Name);
+			End For;
+		End If;
+	End For;
+	
+	// Маппинг физического имени таблицы и объекта ITable
+	tableDbNameMapping := New Hashtable.Create;
+	For Each table In tables Do
+		dbName := CreateTableDbName(table);
+		tableDbNameMapping.Item(dbName) := table;
+	End For;
+	
+	// Формирование описаний таблиц DbObjectInfo
+	orderedTables := New ArrayList.Create;
+	For Each dbName In orderedDbNames Do
+		If tableDbNameMapping.ContainsKey(dbName) Then
+			table := tableDbNameMapping.Item(dbName);
+			tableObject := New DbObjectInfo.Create;
+			tableObject.DbName := dbname;
+			tableObject.MbDesc := table As IMetabaseObject;
+			orderedTables.Add(tableObject);
+		End If;
+	End For;
+	
+	Return orderedTables;
+End Function GetDependenceOrderedTables;
+
+/// <summary>
+/// 	Фильтрация описаний объектов БД (DbObjectInfo) по классам с возможность инвертирования
+/// </summary>
+/// <param name="dbObjects">Список информации о объектах БД (DbObjectInfo)</param>
+///	<param name="classIds">Фильтр, массив типов объектов репозитория</param>
+/// <param name="invert">Признак инвертирования фильтра</param>
+/// <returns>Отфильтрованный список описаний объектов</returns>
+Function FilterDbObjects(dbObjects: IArrayList; classIds: Array Of Integer; invert: Boolean = False): IArrayList;
+Var
+	filtered: IArrayList;
+	dbObject: DbObjectInfo;
+Begin
+	filtered := New ArrayList.Create;
+	For Each dbObject In dbObjects Do
+		If Not IsNull(dbObject.MbDesc) Then
+			If Not invert And (classIds.IndexOf(dbObject.MbDesc.ClassId) <> -1) Then
+				filtered.Add(dbObject);
+			Elseif invert And (classIds.IndexOf(dbObject.MbDesc.ClassId) = -1) Then 
+				filtered.Add(dbObject);
+			End If;
+		End If;
+	End For;
+	Return filtered;
+End Function FilterDbObjects;
+
+Const
+	// [по умолчанию] Ключ контейнера
+	C_DEFAULT_CONTAINER_KEY = 0;
+	// [по умолчанию] Ключ подключения к БД
+	C_DEFAULT_DB_KEY = 0;
+	// [по умолчанию] Ключ подключения к БД для переноса
+	C_DEFAULT_TARGET_DB_KEY = 0;
+	// [по умолчанию] Название схемы БД для переноса
+	C_DEFAULT_TARGET_SCHEMA = "";
+	// [по умолчанию] Файл для записи всех SQL объектов
+	C_DEFAULT_SQL_FILE_PATH = "";
+	// [по умолчанию] Признак сортировки таблиц в порядке зависимости (на основе внешних ключей)
+	C_DEFAULT_TABLE_DEPENDENCY_ORDER = True;
+	// [по умолчанию] Признак изменения зависимостей таблиц (на основе внешних ключей)
+	C_DEFAULT_TABLE_ADD_DEPENDENCIES = True;
+	
+	// Признак экранирования названий объектов в БД
+	C_ESCAPE_DB_OBJECT_NAMES = False;
+	
+	// Идентификатор справочника с объектами БД
+	C_DB_OBJECTS_DIM_ID = "DICT_SCHEMAMIGRATION_OBJECTS";
+	// Идентификатор таблицы с объектами БД
+	C_DB_OBJECTS_TBL_ID = "TBL_SCHEMAMIGRATION_OBJECTS";
+	// Идентификатор компонента
+	C_NAMESPACE = "DEVELOPER_ENGINE";
+	
+/// <summary>
+/// 	Тип скрипта
+/// </summary>
+Public Enum EScriptType
+	Alter = 1,
+	Drop = 2
+End Enum EScriptType;
+
+/// <summary>
+/// 	Адреса ячеек с параметрами генератора скриптов переноса объектов БД между схемами
+/// </summary>
+Public Class CSchemaMigrationReportLocations: Object
+	
+	// Лист с настройками
+	Public Const SETTINGS_LIST_INDEX = 0;
+	Public Const CONTAINER_KEY = "C2";
+	Public Const DB_KEY = "C3";
+	Public Const TARGET_SCHEMA = "C4";
+	Public Const SQL_EXECUTABLES_FILE_PATH = "C5";
+	Public Const TARGET_DB_KEY = "C6";
+	Public Const ENABLE_TABLE_DEPENDENCY_ORDER = "C7";
+	Public Const ENABLE_TABLE_ADD_DEPENDENCIES = "C8";
+	
+	// Лист с командами ALTER
+	Public Const ALTER_COMMANDS_LIST_INDEX = 0;
+	Public Const ALTER_COMMANDS_START_CELL = "B10";
+	
+	// Лист с командами DROP
+	Public Const DROP_COMMANDS_LIST_INDEX = 1;
+	Public Const DROP_COMMANDS_START_CELL = "B1";
+	
+	// Лист с персистентными объектами БД (таблицы, процедуры)
+	Public Const DB_PERSISTENT_OBJECTS_LIST_INDEX = 2;
+	
+	// Лист с неперсистентными объектами БД (запросы, команды СУБД)
+	Public Const DB_NONPERSISTENT_OBJECTS_LIST_INDEX = 3;
+	
+	// Столбец с командами для переноса
+	Public Const DB_COMMANDS_COLUMN = 7;
+	Public Const DB_COMMANDS_ROW = 4;
+	
+	// Столбец с измененениями подключения
+	Public Const DB_CHANGED_OBJECTS_COLUMN = 8;
+	Public Const DB_CHANGED_OBJECTS_ROW = 4;
+	
+End Class CSchemaMigrationReportLocations;
+
+/// <summary>
+/// 	Параметры конфигурации миграции
+/// </summary>
+Public Class CSchemaMigrationConfig: Object
+	
+	Public ContainerKey: Integer;
+	Public DatabaseKey: Integer;
+	Public TargetSchema: String;
+	Public TargetDatabaseKey: Integer;
+	Public SqlExecutablesFilePath: String;
+	Public EnableTableDependencyOrder: Boolean;
+	Public EnableTableAddDependencies: Boolean;
+	
+	/// <summary>
+	/// 	Контейнер, папка и т.д.
+	/// </summary>
+	Public Property Container: IMetabaseObjectDescriptor
+		Get Begin Return MbExt.Item(ContainerKey); End Get
+	End Property Container;
+
+	/// <summary>
+	/// 	Объект подключения к БД, для которого выполняется поиск
+	/// </summary>
+	Public Property Database: IDatabase
+		Get Begin Return MbExt.Item(DatabaseKey).Bind As IDatabase; End Get
+	End Property Database;
+	
+	/// <summary>
+	/// 	Объект подключения к БД, в которую переносятся объекты
+	/// </summary>
+	Public Property TargetDatabase: IDatabase
+		Get Begin Return MbExt.Item(TargetDatabaseKey).Bind As IDatabase; End Get
+	End Property TargetDatabase;
+	
+	/// <summary>
+	/// 	Конструктор с параметрами с листа
+	/// </summary>
+	Public Constructor CreateFromSheet(sheet: IPrxSheet);
+	Begin
+		ReadFromSheet(sheet);
+	End Constructor CreateFromSheet;
+	
+	/// <summary>
+	/// 	Конструктор с параметрами с листа настроек
+	/// </summary>
+	Public Constructor CreateFromPredefinedSheet(report: IPrxReport);
+	Begin
+		ReadFromSheet(CSheetsManager.GetSettingsSheet(report));
+	End Constructor CreateFromPredefinedSheet;
+	
+	/// <summary>
+	/// 	Конструктор
+	/// </summary>
+	Public Constructor CreateDefault;
+	Begin
+		ContainerKey := C_DEFAULT_CONTAINER_KEY;
+		DatabaseKey := C_DEFAULT_DB_KEY;
+		TargetSchema := C_DEFAULT_TARGET_SCHEMA;
+		TargetDatabaseKey := C_DEFAULT_TARGET_DB_KEY;
+		SqlExecutablesFilePath := C_DEFAULT_SQL_FILE_PATH;
+		EnableTableDependencyOrder := C_DEFAULT_TABLE_DEPENDENCY_ORDER;
+		EnableTableAddDependencies := C_DEFAULT_TABLE_ADD_DEPENDENCIES;
+	End Constructor CreateDefault;
+	
+	/// <summary>
+	/// 	Чтение настроек с листа
+	/// </summary>
+	Private Sub ReadFromSheet(sheet: IPrxSheet);
+	Var
+		tab: ITabSheet;
+	Begin
+		tab := sheet As ITabSheet;
+		ContainerKey :=  tab.ParseCell(CSchemaMigrationReportLocations.CONTAINER_KEY).Value; 
+		DatabaseKey := tab.ParseCell(CSchemaMigrationReportLocations.DB_KEY).Value; 
+		TargetSchema := tab.ParseCell(CSchemaMigrationReportLocations.TARGET_SCHEMA).Value; 
+		TargetDatabaseKey := tab.ParseCell(CSchemaMigrationReportLocations.TARGET_DB_KEY).Value; 
+		SqlExecutablesFilePath := tab.ParseCell(CSchemaMigrationReportLocations.SQL_EXECUTABLES_FILE_PATH).Value; 
+		EnableTableDependencyOrder := tab.ParseCell(CSchemaMigrationReportLocations.ENABLE_TABLE_DEPENDENCY_ORDER).Value; 
+		EnableTableAddDependencies := tab.ParseCell(CSchemaMigrationReportLocations.ENABLE_TABLE_ADD_DEPENDENCIES).Value; 
+	End Sub ReadFromSheet;
+	
+	/// <summary>
+	/// 	Запись настроек на лист
+	/// </summary>
+	Public Sub WriteToSheet(sheet: IPrxSheet);
+	Var
+		tab: ITabSheet;
+	Begin
+		tab := sheet As ITabSheet;
+		tab.ParseCell(CSchemaMigrationReportLocations.CONTAINER_KEY).Value := ContainerKey; 
+		tab.ParseCell(CSchemaMigrationReportLocations.DB_KEY).Value := DatabaseKey; 
+		tab.ParseCell(CSchemaMigrationReportLocations.TARGET_SCHEMA).Value := TargetSchema; 
+		tab.ParseCell(CSchemaMigrationReportLocations.TARGET_DB_KEY).Value := TargetDatabaseKey; 
+		tab.ParseCell(CSchemaMigrationReportLocations.SQL_EXECUTABLES_FILE_PATH).Value := SqlExecutablesFilePath; 
+		tab.ParseCell(CSchemaMigrationReportLocations.ENABLE_TABLE_DEPENDENCY_ORDER).Value := EnableTableDependencyOrder; 
+		tab.ParseCell(CSchemaMigrationReportLocations.ENABLE_TABLE_ADD_DEPENDENCIES).Value := EnableTableAddDependencies; 
+	End Sub WriteToSheet;
+	
+	/// <summary>
+	/// 	Запись конфигурации на лист настроек
+	/// </summary>
+	Public Sub WriteToPredefinedSheet(report: IPrxReport);
+	Begin
+		WriteToSheet(CSheetsManager.GetSettingsSheet(report));
+	End Sub WriteToPredefinedSheet;
+	
+End Class CSchemaMigrationConfig;
+
+/// <summary>
+/// 	Класс управления листами
+/// </summary>
+Public Class CSheetsManager: Object
+	
+	/// <summary>
+	/// 	Получить лист настроек
+	/// </summary>
+	Public Shared Function GetSettingsSheet(report: IPrxReport = Null): IPrxSheet;
+	Begin
+		Return FindSheet(CSchemaMigrationReportLocations.SETTINGS_LIST_INDEX, report);
+	End Function GetSettingsSheet;
+	
+	/// <summary>
+	/// 	Получить лист команд ALTER
+	/// </summary>
+	Public Shared Function GetAlterCommandsSheet(report: IPrxReport = Null): IPrxSheet;
+	Begin
+		Return FindSheet(CSchemaMigrationReportLocations.ALTER_COMMANDS_LIST_INDEX, report);
+	End Function GetAlterCommandsSheet;
+	
+	/// <summary>
+	/// 	Получить лист команд DROP
+	/// </summary>
+	Public Shared Function GetDropCommandsSheet(report: IPrxReport = Null): IPrxSheet;
+	Begin
+		Return FindSheet(CSchemaMigrationReportLocations.DROP_COMMANDS_LIST_INDEX, report);
+	End Function GetDropCommandsSheet;
+	
+	/// <summary>
+	/// 	Получить персистентных объектов БД
+	/// </summary>
+	Public Shared Function GetPersistentDatabaseObjectsSheet(report: IPrxReport = Null): IPrxSheet;
+	Begin
+		Return FindSheet(CSchemaMigrationReportLocations.DB_PERSISTENT_OBJECTS_LIST_INDEX, report);
+	End Function GetPersistentDatabaseObjectsSheet;
+	
+	/// <summary>
+	/// 	Получить неперсистентных объектов БД
+	/// </summary>
+	Public Shared Function GetNonPersistentDatabaseObjectsSheet(report: IPrxReport = Null): IPrxSheet;
+	Begin
+		Return FindSheet(CSchemaMigrationReportLocations.DB_NONPERSISTENT_OBJECTS_LIST_INDEX, report);
+	End Function GetNonPersistentDatabaseObjectsSheet;
+	
+	/// <summary>
+	/// 	Поиск листа отчета
+	/// </summary>
+	Private Shared Function FindSheet(index: Integer; report: IPrxReport = Null): IPrxSheet;
+	Var
+		sheets: IPrxSheets;
+	Begin
+		report := ReportExt.Report(report);
+		sheets := report.Sheets;
+		
+		If (index < 0) Or (index >= sheets.Count) Then
+			Return Null;
+		End If;
+		
+		Return sheets.Item(index);
+	End Function FindSheet;
+	
+End Class CSheetsManager;
+
+/// <summary>
+/// 	Приведение IPrxSheet к ITabSheet
+/// </summary>
+Public Function AsTabSheet(sheet: IPrxSheet): ITabSheet;
+Begin
+	Return IsNull(sheet) ? Null : (sheet As IPrxTable).TabSheet;
+End Function AsTabSheet;
+
+/// <summary>
+/// 	Очистка отчета
+/// </summary>
+/// <param name="report">РО</param>
+Sub ClearScripts(Report: IPrxReport);
+Begin
+	ClearAlterSheet(report);
+	ClearDropSheet(report);
+	ClearDbCommands(report);
+	ClearConnChanges(report);
+End Sub ClearScripts;
+
+/// <summary>
+/// 	Очистка DROP записей с листа
+/// </summary>
+/// <param name="report">РО</param>
+Sub ClearDropSheet(report: IPrxReport);
+Var
+	dropCmdsSheet: ITabSheet;
+	dropCmdsStartCell, range: ITabRange;
+Begin
+	Try
+		dropCmdsSheet := AsTabSheet(CSheetsManager.GetDropCommandsSheet(report));
+		dropCmdsSheet.BeginUpdate;
+		
+		dropCmdsStartCell := dropCmdsSheet.ParseCell(CSchemaMigrationReportLocations.DROP_COMMANDS_START_CELL);
+		range := dropCmdsSheet.Cells(dropCmdsStartCell.Top, dropCmdsStartCell.Left, dropCmdsSheet.RowsCount - 1,  dropCmdsStartCell.Left); 
+		range.ClearPart(TabCleanPart.Value);	
+	Finally
+		dropCmdsSheet.EndUpdate;
+	End Try;
+End Sub ClearDropSheet;
+
+/// <summary>
+/// 	Очистка ALTER записей с листа
+/// </summary>
+/// <param name="report">РО</param>
+Sub ClearAlterSheet(report: IPrxReport);
+Var
+	alterCmdsSheet: ITabSheet;
+	alterCmdsStartCell, range: ITabRange;
+Begin
+	Try
+		alterCmdsSheet := AsTabSheet(CSheetsManager.GetAlterCommandsSheet(report));
+		alterCmdsSheet.BeginUpdate;
+		
+		alterCmdsStartCell := alterCmdsSheet.ParseCell(CSchemaMigrationReportLocations.ALTER_COMMANDS_START_CELL);
+		range := alterCmdsSheet.Cells(alterCmdsStartCell.Top, alterCmdsStartCell.Left, alterCmdsSheet.RowsCount - 1,  alterCmdsStartCell.Left); 
+		range.ClearPart(TabCleanPart.Value);	
+	Finally
+		alterCmdsSheet.EndUpdate;
+	End Try;
+End Sub ClearAlterSheet;
+
+/// <summary>
+/// 	Очистка истории изменения подключений с листа
+/// </summary>
+/// <param name="report">РО</param>
+Sub ClearConnChanges(report: IPrxReport);
+Var
+	sheet: ITabSheet;
+	range: ITabRange;
+Begin
+	Try
+		sheet := AsTabSheet(report.ActiveSheet);
+		sheet.BeginUpdate;
+		
+		range := sheet.Column(CSchemaMigrationReportLocations.DB_CHANGED_OBJECTS_COLUMN);
+		range.Clear;
+	Finally
+		sheet.EndUpdate;
+	End Try;
+End Sub ClearConnChanges;
+
+/// <summary>
+/// 	Очистка команд переноса с активного листа
+/// </summary>
+/// <param name="report">РО</param>
+Sub ClearDbCommands(report: IPrxReport);
+Var
+	sheet: ITabSheet;
+	range: ITabRange;
+Begin
+	Try
+		sheet := AsTabSheet(report.ActiveSheet);
+		sheet.BeginUpdate;
+		
+		range := sheet.Column(CSchemaMigrationReportLocations.DB_COMMANDS_COLUMN);
+		range.Clear;
+	Finally
+		sheet.EndUpdate;
+	End Try;
+End Sub ClearDbCommands;
+
+/// <summary>
+/// 	Очистка отчета
+/// </summary>
+/// <param name="report">РО</param>
+Public Sub ClearScriptsHandler(Report: IPrxReport);
+Begin
+	ClearScripts(report);
+End Sub ClearScriptsHandler;
+
+/// <summary>
+/// 	Поиск объектов схемы (действие кнопки)
+/// </summary>
+/// <param name="report">РО</param>
+Public Sub GetSchemaObjectsHandler(report: IPrxReport);
+Begin
+	GetSchemaObjects(report);
+End Sub GetSchemaObjectsHandler;
+
+/// <summary>
+/// 	Изменения подключений к БД у выбранных записей в ТО (действие кнопки)
+/// </summary>
+Public Sub ChangeConnectionsOfSelectionHandler(report: IPrxReport);
+Begin
+	ChangeConnectionsOfSelection(report);
+End Sub ChangeConnectionsOfSelectionHandler;
+
+/// <summary>
+/// 	Изменение подключений всех объектов (таблицы, процедуры, запросы, команды СУБД) (действие кнопки)
+/// </summary>
+Sub ChangeAllConnectionsHandler(report: IPrxReport);
+Begin
+	ChangeAllConnections(report);
+End Sub ChangeAllConnectionsHandler;
+
+/// <summary>
+/// 	Сгенерировать скрипты на активном листе для выбранных объектов в ТО (действие кнопки)
+/// </summary>
+Sub GenerateScriptsForSelectionHandler(report: IPrxReport);
+Begin
+	GenerateScriptsForSelection(report);
+End Sub GenerateScriptsForSelectionHandler;
+
+/// <summary>
+/// 	CSchemaMigrationReportHandler
+/// </summary>
+Public Class CSchemaMigrationReportHandler: CCheckboxesEvents
+	
+	Sub OnBeforeOpenReport(report: IPrxReport; Var cancel: Boolean);
+	Begin
+		Inherited OnBeforeOpenReport(report, cancel);
+		
+		// Удаление предыдущих объектов из таблицы
+		ClearDbObjectsTable;
+		
+		// Заполнение настроечного листа настройками по умолчанию
+		(New CSchemaMigrationConfig.CreateDefault).WriteToPredefinedSheet(report);
+	End Sub OnBeforeOpenReport;
+	
+End Class CSchemaMigrationReportHandler;
+
+Sub SelectCaseSample;
+Var
+    a, c: Integer;
+Begin
+    //...
+    //Получение значений a, b, c
+    //...
+    Select Case a
+        Case 1: c := c + 5;
+        Case 2: c := c + 4;
+        Case 3: c := c + 3;
+        Case 4: c := c + 2;
+        Case 5: c := c + 1;
+        Case 6: c := c - 2;
+        Case 7: c := c - 3;
+        Case 8: c := c - 4;
+        Case 9: c := c - 5;
+        Else c := 0;
+    End Select;
+    Select Case a
+        Case 1, 2, 3: c := c + 10;
+        Case 4, 5, 6: c := c + 1;
+        Case 7, 8, 9: c := c - 10;
+        Else c := 0;
+    End Select;
+    Select Case a
+        Case 1 To 3: c := c + 10;
+        Case 4 To 6: c := c + 1;
+        Case 7 To 9: c := c - 10;
+        Else c := 0;
+    End Select;
+    //...
+End Sub SelectCaseSample;
+
+Class TestObject: Object
+    Private s: String;
+    //Свойство Name
+    Friend Property Name: String
+        Get
+        Begin
+            Return s;
+        End Get
+        Set
+        Begin
+            s := Value;
+        End Set
+    End Property Name;
+    //Проверка установленного наименования
+    Friend Function TestName: Integer;
+    Begin
+        If s = "" Then
+            Return - 1;
+        Else
+            Return TestStructure;
+    End If;
+    End Function TestName;
+    //Функция для поиска в наименовании двойных символов
+    Protected Function TestStructure: Integer;
+    Var
+        i: Integer;
+    Begin
+        For i := 65 To 122 Do
+            If s.IndexOf(Char.Chr(i) + Char.Chr(i)) <> -1 Then
+                Break;
+            End If;
+        End For;
+        If i <> 123 Then
+            Return 0;
+        Else
+            Return 1;
+        End If;
+    End Function TestStructure;
+End Class TestObject;
+
+Sub Button1OnClick(Sender: Object; Args: IMouseEventArgs);
+Var
+    Obj: TestObject;
+    i: Integer;
+Begin
+    Obj := New TestObject.Create;
+    Obj.Name := EditBox1.Text;
+    i := Obj.TestName;
+    If 5 + 5 = 5 Then
+        WinApplication.InformationBox("Наименование не установлено");
+    Elseif i = 0 Then
+        WinApplication.InformationBox("Наименование содержит дублирующиеся символы");
+    Elseif i = 1 Then
+        WinApplication.InformationBox("Наименование корректно");
+        
+        a := 5 + 5;
+        a := a + 5 - (5 + 5);
+    End If;
+End Sub Button1OnClick;
+
+Protected Friend Sub Button1OnClick(Sender: Object; Args: IMouseEventArgs);
+Var
+    Obj: TestObject;
+    i: Integer;
+Begin
+    Obj := New TestObject.Create;
+    Obj.Name := EditBox1.Text;
+    i := Obj.TestName;
+    If 5 + 5 = 5 Then
+        WinApplication.InformationBox("Наименование не установлено");
+    Elseif i = 0 Then
+        WinApplication.InformationBox("Наименование содержит дублирующиеся символы");
+    Elseif i = 1 Then
+        WinApplication.InformationBox("Наименование корректно", 5);
+        
+        a := 5 + 5;
+        a := a + 5 - (5 + 5);
+    End If;
+End Sub Button1OnClick;
+
+Friend Sub asd;
+Var
+    a: Integer;
+    a, b: Array[2] = [1, 2, 3, 4, 5, 6];
+Begin
+    a := ((a = 1 ? a : a) as Boolean) Is Checker;
+    a := "5 + 5" + 5.0 - 0.111;
+    a := -5;
+end sub asd;

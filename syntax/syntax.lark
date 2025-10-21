@@ -1,0 +1,195 @@
+unit: (enum_declaration | const_block | method_declaration | class_def)*
+
+class_def: [access_modifier] [SHARED] CLASS WORD _COLON TYPE ("," TYPE)* class_body END CLASS WORD _SEMICOLON
+class_body: (enum_declaration | const_block | method_declaration | constructor | field_declaration | property_declaration)*
+
+constructor: [access_modifier] CONSTRUCTOR WORD parameter_list_optional _SEMICOLON method_body CONSTRUCTOR WORD _SEMICOLON
+
+property_declaration: [access_modifier] [SHARED] PROPERTY WORD parameter_list_optional _COLON TYPE [property_get] [property_set] END PROPERTY WORD _SEMICOLON
+property_get: GET method_body GET
+property_set: SET method_body SET
+
+method_declaration: [access_modifier] [SHARED] CALLABLE WORD parameter_list_optional [_COLON TYPE] _SEMICOLON method_body CALLABLE WORD _SEMICOLON
+method_body: [method_const_block] [var_block] BEGIN statement_list END
+
+parameter_list_optional: ["(" [parameter_list] ")"]
+parameter_list: parameter (_SEMICOLON parameter)*
+parameter: [VAR] [PARAMARRAY] WORD ("," WORD)* _COLON TYPE ["=" LITERAL]
+
+var_block: _VAR variables_list
+variables_list: variable_declaration*
+variable_declaration: WORD ["," WORD]* _COLON TYPE ["=" (LITERAL | ("[" LITERAL ("," LITERAL)* "]"))] _SEMICOLON
+
+field_declaration: [access_modifier] [SHARED] WORD _COLON WORD _SEMICOLON
+
+const_block: [access_modifier] [_CONST] method_const_declaration
+method_const_block: _CONST method_const_declaration*
+method_const_declaration: WORD "=" LITERAL _SEMICOLON
+
+enum_declaration: [access_modifier] ENUM WORD enum_body END ENUM WORD _SEMICOLON
+enum_body: enum_value ("," enum_value)
+enum_value: WORD "=" LITERAL
+
+// Базовые конструкции
+statement_list: statement*
+
+statement: (assignment_statement 
+    | return_statement 
+    | inherited_call
+    | if_statement 
+    | compound_statement 
+    | for_statement 
+    | foreach_statement 
+    | continue_statement 
+    | break_statement 
+    | select_block
+    | try_block) _SEMICOLON
+
+inherited_call: INHERITED atom
+for_statement: FOR assignment_statement TO expression (STEP LITERAL_INTEGER)? DO statement_list END FOR
+foreach_statement: FOR EACH WORD IN expression DO statement_list END FOR
+continue_statement.1: CONTINUE
+break_statement.1: BREAK
+
+try_block: TRY statement_list [EXCEPT ON WORD ":" WORD ("," WORD) DO] [EXCEPT] [FINALLY statement_list] END TRY
+
+select_block: SELECT CASE WORD (CASE LITERAL ("," LITERAL)* ("To" LITERAL)* ":" statement_list)* [ELSE statement_list] END SELECT
+
+assignment_statement: atom _ASSIGNMENT expression
+return_statement: RETURN expression?
+compound_statement: BEGIN statement_list END
+
+if_statement: IF expression THEN statement_list [ELSEIF expression THEN statement_list] [ELSE statement_list] END IF
+ternary_expression: expression _QUESTION_MARK expression _COLON expression
+type_cast: (AS_KEYWORD TYPE)
+type_check: (IS_KEYWORD TYPE)
+
+?expression: (simple_expression | ternary_expression) (comparison_op expression)? type_cast? type_check?
+?comparison_op: "=" | "<>" | "<" | "<=" | ">" | ">="
+
+?simple_expression: term (add_op term)*
+?add_op: "+" | "-" | OR
+?term: factor (mul_op factor)*
+?mul_op: "*" | "/" | AND | "Mod"i | "Div"i
+
+?factor: unary_op factor | atom
+
+?unary_op: "+" | "-" | NOT
+
+?constructor_call: NEW atom
+?method_call: atom "(" argument_list? ")"
+?member_access: atom "." atom
+?index_access: atom "[" expression "]"
+
+?atom: WORD | LITERAL | method_call | member_access | index_access | "(" expression ")" | constructor_call
+
+argument_list: expression ("," expression)*
+
+access_modifier.1: PUBLIC | PRIVATE | PROTECTED | FRIEND | protected_friend
+protected_friend: (PROTECTED FRIEND)
+
+LITERAL: LITERAL_STRING | LITERAL_NUMBER | LITERAL_BOOLEAN | NULL
+LITERAL_NUMBER: LITERAL_DOUBLE | LITERAL_INTEGER
+LITERAL_DOUBLE: /[-+]?\d+.\d+/
+LITERAL_INTEGER: /[-+]?[0-9][0-9]*|0/
+LITERAL_STRING: /([ubf]?r?|r[ubf])("(?!"").*?(?<!\\)(\\\\)*?"|'(?!'').*?(?<!\\)(\\\\)*?')/i
+LITERAL_BOOLEAN: TRUE | FALSE
+
+CALLABLE.1: SUB | FUNCTION
+
+TYPE: BASE_TYPE | CLASS_TYPE | INTERFACE_TYPE
+INTERFACE_TYPE: "i"i + CLASS_TYPE
+CLASS_TYPE: WORD
+BASE_TYPE: TYPE_INTEGER
+    | TYPE_CHAR
+    | TYPE_STRING
+    | TYPE_VARIANT
+    | TYPE_DOUBLE
+    | TYPE_DATETIME
+    | TYPE_BOOLEAN
+    | TYPE_ARRAY
+    | TYPE_OBJECT
+    | TYPE_DECIMAL
+    | TYPE_CURRENCY
+    | TYPE_GUID
+    | TYPE_INT64
+
+_SEMICOLON: ";"
+_COLON: ":"
+_ASSIGNMENT: ":="
+_QUESTION_MARK: "?"
+_VAR: VAR
+_CONST: CONST
+AND: "and"i
+OR: "or"i
+NOT: "not"i
+CLASS: "Class"i
+BEGIN: "Begin"i
+VAR: "Var"i
+END: "End"i
+SUB: "Sub"i
+FUNCTION: "Function"i
+TRUE: "True"i
+FALSE: "False"i
+IF: "If"i
+THEN: "Then"i
+ELSE: "Else"i
+ELSEIF: "Elseif"i
+OBJECT: "Object"i
+RETURN: "Return"i
+GET: "Get"i
+SET: "Set"i
+PROPERTY: "Property"i
+CONSTRUCTOR: "Constructor"i
+PUBLIC: "Public"i
+PRIVATE: "Private"i
+PROTECTED: "Protected"i
+FRIEND: "Friend"i
+AS_KEYWORD: "As"i
+IS_KEYWORD: "Is"i
+NULL: "Null"i
+FOR: "For"i
+EACH: "Each"i
+TO: "To"i
+DO: "Do"i
+IN: "In"i
+BREAK: "Break"i
+CONTINUE: "Continue"i
+NEW: "New"i
+STEP: "Step"i
+INHERITED: "Inherited"i
+SHARED: "Shared"i
+CONST: "Const"i
+ENUM: "Enum"i
+TRY: "Try"i
+EXCEPT: "Except"i
+ON: "On"i
+FINALLY: "Finally"i
+SELECT: "Select"i
+CASE: "Case"i
+OF: "Of"i
+PARAMARRAY: "Paramarray"i
+
+TYPE_INTEGER: "Integer"i
+TYPE_CHAR: "Char"i
+TYPE_STRING: "String"i
+TYPE_VARIANT: "Variant"i
+TYPE_DOUBLE: "Double"i
+TYPE_DATETIME: "DateTime"i
+TYPE_BOOLEAN: "Boolean"i
+TYPE_ARRAY: /(Array Of \w*)|(Array\[\d+\])|(Array)/i
+TYPE_OBJECT: "Object"i
+TYPE_DECIMAL: "Decimal"i
+TYPE_CURRENCY: "Currency"i
+TYPE_GUID: "Guid"i
+TYPE_INT64: "Int64"i
+
+
+NAME: /[^\W\d]\w*/
+WORD: /[a-zA-Z_][a-zA-Z0-9_]*/
+
+%import common.WS
+%ignore WS
+%ignore /\/\/[^\n]*/    // Однострочные комментарии
+%ignore /\/\/\/[^\n]*/
+%ignore /\/\*.*?\*\//    // Многострочные комментарии

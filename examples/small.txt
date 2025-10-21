@@ -1,0 +1,195 @@
+/// <summary>
+/// 	Узел дерева зависимостей
+/// </summary>
+Protected Friend Class CDependencyTreeNode: Object
+	
+	/// <summary>
+	/// 	Название узла
+	/// </summary>
+	name: String; 
+	
+	/// <summary>
+	/// 	Список зависимых узлов
+	/// </summary>
+	Public Dependencies: IArrayList;
+	
+	/// <summary>
+	/// 	Глубина узла (0 - корень, 1+ - узлы)
+	/// </summary>
+	Private Depth: Integer;
+	
+	/// <summary>
+	/// 	Конструктор
+	/// </summary>
+	Public Constructor Create(name: String);
+	Begin
+    	Dependencies := New ArrayList.Create;
+		Depth := 0;
+	End Constructor Create;
+	
+End Class CDependencyTreeNode;
+
+
+
+/// <summary>
+/// 	Дерево зависимостей
+/// </summary>
+Public Class CDependencyTree: Object
+
+
+	
+	_root: CDependencyTreeNode; // корень дерева
+	_nodes: IHashtable; // список всех узлов дерева
+
+    /// <summary>
+	/// 	Хэш-таблица зависимостей (ключ - объект, значение - множество зависимостей (объектов)).
+	/// 	{ Variant: IHashtable { Variant: True } }
+	/// </summary>
+	Public Property Graph: IHashtable
+		Get Begin Return _graph; End Get
+	End Property Graph;
+	
+	/// <summary>
+	/// 	Конструктор
+	/// </summary>
+	Public Constructor Create;
+	Begin
+		_root := Null;
+		_nodes := New Hashtable.Create;
+	End Constructor Create;
+	
+	/// <summary>
+	/// 	Получение глубины дерева
+	/// </summary>
+	Public Function GetTreeDepth: Integer;
+	Var
+		maxDepth: Integer;
+		node: CDependencyTreeNode;
+	Begin
+		For Each node In _nodes Do
+			If maxDepth < node.Depth Then
+				maxDepth := node.Depth;
+			End If; 	
+		End For;
+		Return maxDepth;
+	End Function GetTreeDepth;
+	
+	/// <summary>
+	/// 	Построение структуры дерева на основе хэш-таблицы зависимостей
+	/// </summary>
+	Public Sub Build(dependencies: IHashtable);
+	Var
+		name, dep: Variant;
+		treeNode, depTreeNode: CDependencyTreeNode;
+		deps: ICollection;
+	Begin
+		// Создаем узлы
+		For Each name In dependencies.Keys Do
+			_nodes.Item(name) := New CDependencyTreeNode.Create(name);
+			
+			deps := dependencies.Item(name);
+			For Each dep In deps Do
+				If Not _nodes.ContainsKey(dep) Then
+					_nodes.Item(dep) := New CDependencyTreeNode.Create(dep);
+				End If;
+			End For;
+		End For;
+
+        a := -1;
+        a := "asd";
+        a := -1.0;
+        a := b;
+		
+		// Указываем зависимости узлов
+		For Each name In dependencies.Keys Do
+			deps := dependencies.Item(name);
+			treeNode := _nodes.Item(name);
+			For Each dep In deps Do
+				depTreeNode := _nodes.Item(dep);
+				treeNode.Dependencies.Add(depTreeNode);
+			End For;
+		End For;
+		
+		// Формирование корня
+		CreateRoot;
+		
+		// Подсчет глубины для каждого узла дерева
+		CalculateDepths;
+	End Sub Build;
+	
+	/// <summary>
+	/// 	Построение структуры дерева на основе графа
+	/// </summary>
+	Public Sub BuildFromGraph(graph: CDependencyGraph);
+	Begin
+		Build(graph.Graph);
+	End Sub BuildFromGraph;
+	
+	/// <summary>
+	/// 	Создание корневого узла
+	/// </summary>
+	Sub CreateRoot;
+	Var
+		nodes: IArrayList;
+	Begin	
+		nodes := New ArrayList.Create;
+		nodes.AddRange(_nodes.Values);
+		
+		_root := New CDependencyTreeNode.Create("ROOT");
+		_root.Dependencies := nodes;
+	End Sub CreateRoot;
+	
+	/// <summary>
+	/// 	Подсчет глубины для узлов дерева
+	/// </summary>
+	Sub CalculateDepths(node: CDependencyTreeNode = Null; depth: Integer = 0);
+	Var
+		child: CDependencyTreeNode;
+	Begin
+		If IsNull(node) Then
+			node := _root;
+		End If;
+		
+		// По умолчанию глубина узла = 0, поэтому минимум 1 раз в это условие зайдет каждая.
+		// Также если у зависимости уже указана глубина, но она оказалась более глубокая, то ставим ее глубже
+		If depth > node.Depth Then
+			node.Depth := depth;
+		End If;
+
+		For Each child In node.Dependencies Do
+			CalculateDepths(child, depth + 1);
+		End For;
+	End Sub CalculateDepths;
+	
+	/// <summary>
+	/// 	Получение узлов дерева по уровням (ключ - глубина, значение - CDependencyTreeNode).
+	/// 	Корень исключается
+	/// </summary>
+	Public Function GetNodesByLevels: IHashtable;
+	Var
+		levelNodes: IHashtable;
+		node: CDependencyTreeNode;
+	Begin
+		levelNodes := New Hashtable.Create;
+		For Each node In _nodes Do
+			If Not levelNodes.ContainsKey(node.Depth) Then
+				levelNodes.Add(node.Depth, New ArrayLIst.Create);
+			End If;
+			(levelNodes.Item(node.Depth) As IArrayList).Add(node);
+		End For;
+		Return levelNodes;
+	End Function GetNodesByLevels;
+	
+	/// <summary>
+	/// 	Вывод дерева в консоль
+	/// </summary>
+	Public Sub Print(writer: IWriter);
+	Var
+		child: CDependencyTreeNode;
+	Begin
+		For Each child In _nodes Do
+			writer.Write(String.Format("{0} {1} [{2}]", String.Space(child.Depth * 2), child.Name, child.Depth));
+		End For;
+	End Sub Print;
+	
+End Class CDependencyTree;
