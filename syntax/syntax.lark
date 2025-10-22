@@ -1,7 +1,9 @@
-unit: (enum_declaration | const_block | method_declaration | class_def | interface_def)*
+start: unit
+
+unit: (enum_declaration | const_block | method_declaration | class_def | interface_def | delegate_declaration)*
 
 class_def: [access_modifier] [SHARED] CLASS WORD _COLON type ("," type)* class_body END CLASS WORD _SEMICOLON
-class_body: (enum_declaration | class_const_declaration | method_declaration | constructor | field_declaration | property_declaration)*
+class_body: (enum_declaration | event_declaration | class_const_declaration | method_declaration | constructor | field_declaration | property_declaration)*
 
 interface_def: [access_modifier] INTERFACE WORD [_COLON] [INTERFACE_TYPE] interface_body END INTERFACE WORD _SEMICOLON
 interface_body: (interface_method_declaration | interface_property_declaration)*
@@ -32,6 +34,9 @@ const_block: [access_modifier] _CONST const_list
 const_list: const_declaration*
 const_declaration: VARIABLE "=" simple_expression _SEMICOLON
 
+delegate_declaration: [access_modifier] DELEGATE WORD parameter_list_optional [_COLON type] _SEMICOLON
+event_declaration: [access_modifier] EVENT VARIABLE ["," VARIABLE]* _COLON type _SEMICOLON
+
 enum_declaration: [access_modifier] ENUM WORD enum_body END ENUM WORD _SEMICOLON
 enum_body: enum_value ("," enum_value)
 enum_value: VARIABLE "=" literal_or_var
@@ -51,7 +56,14 @@ statement: (assignment_statement
     | try_block
     | raise_statement
     | dispose_statement
+    | with_statement
+    | while_statement
+    | repeat_statement
     | expression) _SEMICOLON
+
+repeat_statement: REPEAT statement_list UNTIL expression
+with_statement: WITH VARIABLE _COLON expression DO statement_list END WITH
+while_statement: WHILE expression DO statement_list END WHILE
 
 for_statement: FOR assignment_statement TO expression (STEP LITERAL_INTEGER)? DO statement_list END FOR
 foreach_statement: FOR EACH VARIABLE IN expression DO statement_list END FOR
@@ -77,7 +89,7 @@ ternary_expression: expression _QUESTION_MARK expression _COLON expression
 ?simple_expression: term (add_op term)*
 !add_op: "+" | "-" | OR
 ?term: factor (mul_op factor)*
-!mul_op: "*" | "/" | AND | "Mod"i | "Div"i
+!mul_op: "*" | "/" | AND | MOD | DIV
 
 ?factor: unary_op factor | atom
 
@@ -98,14 +110,13 @@ lov_case_arg: lov_range_expression | atom
 lov_range_expression: literal_or_var TO literal_or_var
 literal_or_var: VARIABLE | LITERAL
 
-access_modifier.1: PUBLIC | PRIVATE | PROTECTED | FRIEND | protected_friend
-protected_friend: (PROTECTED FRIEND)
+access_modifier.1: PUBLIC | PRIVATE | PROTECTED | FRIEND | PROTECTED FRIEND
 
 LITERAL: LITERAL_STRING | LITERAL_NUMBER | LITERAL_BOOLEAN | NULL | TYPE_SPECIAL_SYMBOL
 LITERAL_NUMBER: LITERAL_DOUBLE | LITERAL_INTEGER
 LITERAL_DOUBLE: /[-+]?\d+.\d+/
 LITERAL_INTEGER: /[-+]?[0-9][0-9]*|0/
-LITERAL_STRING: /([ubf]?r?|r[ubf])("(?!"").*?(?<!\\)(\\\\)*?"|'(?!'').*?(?<!\\)(\\\\)*?')/i
+LITERAL_STRING: /"(""|[^"])*"|'(''|[^'])*'/i
 LITERAL_BOOLEAN: TRUE | FALSE
 
 CALLABLE.5: SUB | FUNCTION
@@ -114,7 +125,7 @@ VARIABLE: WORD
 type: base_type | CLASS_TYPE | INTERFACE_TYPE
 INTERFACE_TYPE: /I[a-zA-Z_][a-zA-Z0-9_]*/i
 CLASS_TYPE: WORD
-base_type: TYPE_INTEGER
+?base_type: TYPE_INTEGER
     | TYPE_CHAR
     | TYPE_STRING
     | TYPE_VARIANT
@@ -140,6 +151,8 @@ _TO: TO
 _END: END
 _BEGIN: BEGIN
 
+MOD: "mod"i
+DIV: "div"i
 AND: "and"i
 OR: "or"i
 NOT: "not"i
@@ -167,7 +180,7 @@ PROTECTED: "Protected"i
 FRIEND: "Friend"i
 AS_KEYWORD: "As"i
 IS_KEYWORD: "Is"i
-NULL: "Null"i
+NULL: /"^Null$"/i
 FOR: "For"i
 EACH: "Each"i
 TO: "To"i
@@ -192,6 +205,12 @@ PARAMARRAY: "Paramarray"i
 RAISE: "Raise"i
 DISPOSE: "Dispose"i
 INTERFACE.5: "Interface"i
+WITH: "With"i
+WHILE: "While"i
+UNTIL: "Until"i
+EVENT: "Event"i
+DELEGATE: "Delegate"i
+REPEAT: "Repeat"i
 
 TYPE_INTEGER: "Integer"i
 TYPE_CHAR: "Char"i

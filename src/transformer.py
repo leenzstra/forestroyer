@@ -621,7 +621,7 @@ class ClassDeclarationsTransformer(Transformer):
                 if ch['_type'] == 'type':
                     arr_type = ch
 
-        arr_size = children[3]
+        arr_size = children[-1]
 
         return {"_type": "type_array", "type": arr_type, "size": arr_size}
 
@@ -630,3 +630,49 @@ class ClassDeclarationsTransformer(Transformer):
 
     def type(self, children):
         return {"_type": "type", "value": children[0]}
+    
+    def while_statement(self, children):
+        return {
+            "_type": "while_statement",
+            "condition": children[1],
+            "statements": children[3],
+        }
+    
+    def with_statement(self, children):
+        return {
+            "_type": "with_statement",
+            "variable": children[1],
+            "expression": children[2],
+            "statements": children[4],
+        }
+    
+    def repeat_statement(self, children):
+        return {
+            "_type": "repeat_statement",
+            "statements": children[1],
+            "condition": children[3],
+        }
+    
+    def delegate_declaration(self, children):
+        return {
+            "_type": "delegate_declaration",
+            "access_modifier": children[0],
+            "name": children[2],
+            "parameters": children[3],
+            "return_type": children[4],
+        }
+    
+    def event_declaration(self, children):
+        return {
+            "_type": "event_declaration",
+            "access_modifier": children[0],
+            "name": children[2],
+            "delegate_type": children[3],
+        }
+
+    def index_access(self, children):
+        return {
+            "_type": "index_access",
+            "object": children[0],
+            "index": children[1],
+        }

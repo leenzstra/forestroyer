@@ -1692,14 +1692,14 @@ Public Class CTestCaseGenerator: Object
 				Raise New CNotFoundFieldException.Create(CONTEXT_FIELD_ID, ScenarioQueryId);
 			End If;
 			
-			//While Not dataset.Eof Do
-			//	If field.Value.IsEmpty Then
-			//		Continue;
-			//	End If;
-			//	
-			//	steps.Add(field.Value);							
-			//	dataset.Next;
-			//End While;	
+			While Not dataset.Eof Do
+				If field.Value.IsEmpty Then
+					Continue;
+				End If;
+				
+				steps.Add(field.Value);							
+				dataset.Next;
+			End While;	
 		Finally
 			dataset.Close;
 		End Try;		
@@ -1826,11 +1826,11 @@ Public Class CTestCaseGenerator: Object
 		paramsBlock := "";				
 		If Not IsNull(paramValues) Then
 			For Each paramValue In paramValues Do
-				//With comboBoxDescriptor: BindingExt.GetBindingDimComboDescriptor(paramValue.Binding.AsString) Do
-				//	If IsNull(comboBoxDescriptor) Then
-				//		Continue;
-				//	End If;
-				//End With;
+				With comboBoxDescriptor: BindingExt.GetBindingDimComboDescriptor(paramValue.Binding.AsString) Do
+					If IsNull(comboBoxDescriptor) Then
+						Continue;
+					End If;
+				End With;
 				
 				If paramValue.IsArray Then
 					If IsNull(vars) Then
@@ -1867,13 +1867,13 @@ Public Class CTestCaseGenerator: Object
 	/// <returns>True, если форма ввода, иначе False</returns>
 	Function IsDef(object: Variant): Boolean;
 	Begin
-		//With desc: MbExt.Parse(object) Do
-		//	If IsNull(desc) Then
-		//		Raise New CNotFoundObjectException.Create(VariantToString(object));
-		//	End If;
-		//	
-		//	Return desc.ClassId = DefExt.ClassId;
-		//End With;
+		With desc: MbExt.Parse(object) Do
+			If IsNull(desc) Then
+				Raise New CNotFoundObjectException.Create(VariantToString(object));
+			End If;
+			
+			Return desc.ClassId = DefExt.ClassId;
+		End With;
 	End Function IsDef;
 	
 	/// <summary>
@@ -1907,17 +1907,17 @@ Public Class CTestCaseGenerator: Object
 		str := CultureExt.FormatVariant(value);
 		If value.VarType = ForeVariantType.String Then
 			// Экранирование перевода каретки
-			//If str.IndexOf(CRLF) > -1 Then
-				//str := String.Replace(str, CRLF, """ + #13 + #10 + """);
-			//Elseif str.IndexOf(#10) > -1 Then
-				//str := String.Replace(str, #10, """ + #10 + """);	
-			//End If;			
+			If str.IndexOf(CRLF) > -1 Then
+				str := String.Replace(str, CRLF, """ + #13 + #10 + """);
+			Elseif str.IndexOf(#10) > -1 Then
+				str := String.Replace(str, #10, """ + #10 + """);	
+			End If;			
 			// Экранирование двойной кавычки
-			//If str.IndexOf("""") > -1 Then
-			//	str := String.Replace(str, """", """""");
-			//End If;
+			If str.IndexOf("""") > -1 Then
+				str := String.Replace(str, """", """""");
+			End If;
 			
-			//str := String.Format("""{0}""", str);
+			str := String.Format("""{0}""", str);
 		Elseif value.VarType = ForeVariantType.Nulvalue Then
 			str := "Null";
 		End If;
@@ -1997,7 +1997,7 @@ Public Class CTestCaseGenerator: Object
 		If Not IsNull(eventContext.ParamSheets) Then
 			sheets := New StringList.Create;
 			For Each sheet In eventContext.ParamSheets Do
-				//sheets.Add(String.Format("""{0}""", sheet));
+				sheets.Add(String.Format("""{0}""", sheet));
 			End For;
 			controlSheetsFormatted := String.Format("AsArray({0})", sheets.Text(","));
 		End If;
@@ -2113,8 +2113,16 @@ Public Class CTestCaseGenerator: Object
 				nonEmptyValues.Add(value);
 			End If;
 		End For;
+
+        Repeat
+            a := 5;
+        Until True;
 		
 		Return nonEmptyValues.Text(delimeter);
 	End Function ConcatStrings;
+
+    Protected Friend Event OnChangeStyle: ChangeStyle;
 	
 End Class CTestCaseGenerator;
+
+Delegate ChangeStyle(FontBold: Boolean; FontName: String; FontSize: Integer);
