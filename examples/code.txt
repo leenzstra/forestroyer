@@ -17,13 +17,37 @@ Public Class CDependencyTreeNode: Object
 	/// 	Глубина узла (0 - корень, 1+ - узлы)
 	/// </summary>
 	Public Depth: Integer;
+
+	Function Test1;
+	Begin
+	End function test1;
 	
 	/// <summary>
 	/// 	Конструктор
 	/// </summary>
 	Public Constructor Create(name: String);
+	Const
+		C_VAR1 = "Name";
+		C_VAR2 = 1;
+	Const CVAR3 = "asd";
+	Var
+		name: Variant = 1;
+		name2: Array of Integer[1] = [1];
+		name3: Array[3] = [1, 2, 3 + C_VAR2];
+		name4: IArrayList;
+		name5: IArrayList;
 	Begin
 		Inherited Create(name);
+
+		Raise new Exception.Create(asd);
+		Raise e;
+		Dispose file;
+
+		For each node in nodes Do
+			break;
+			continue;
+			return;
+		End for;
 
 		if True Then
 			a := 5;
@@ -34,6 +58,56 @@ Public Class CDependencyTreeNode: Object
 		Else
 			a := 8;
 		end if;
+
+		Try
+			Debug.WriteLine("0");
+			//Raise New IndexOutOfRangeException.Create("asd");
+		Except On e: IndexOutOfRangeException Do
+			Debug.WriteLine("1");
+		On e: FileAlreadyExistsException Do
+			Debug.WriteLine("2");
+		Else
+			Debug.WriteLine("3");
+		Finally
+			Debug.WriteLine("4");
+		End Try;
+
+		Try
+			Debug.WriteLine("1");
+			//Raise New IndexOutOfRangeException.Create("asd");
+		Except
+			Debug.WriteLine("2");
+		Else
+			Debug.WriteLine("3");
+		Finally
+			Debug.WriteLine("4");
+		End Try;
+
+		Try
+			Debug.WriteLine("1");
+		Except
+			Debug.WriteLine("2");
+		Finally
+			Debug.WriteLine("4");
+		End Try;
+
+		Try
+			Debug.WriteLine("1");
+		Finally
+			Debug.WriteLine("4");
+		End Try;
+
+		Try
+			Debug.WriteLine("1");
+		Except
+			Debug.WriteLine("2");
+		End Try;
+
+		Try
+			Debug.WriteLine("1");
+		Except On e: Exception Do
+			Debug.WriteLine("2");
+		End Try;
 		
     	Dependencies := New ArrayList.Create;
 		Depth := 0;
@@ -794,7 +868,7 @@ Begin
 		
 		dropCmdsStartCell := dropCmdsSheet.ParseCell(CSchemaMigrationReportLocations.DROP_COMMANDS_START_CELL);
 		range := dropCmdsSheet.Cells(dropCmdsStartCell.Top, dropCmdsStartCell.Left, dropCmdsSheet.RowsCount - 1,  dropCmdsStartCell.Left); 
-		range.ClearPart(TabCleanPart.Value);	
+		range.ClearPart(TabCleanPart.Value);
 	Finally
 		dropCmdsSheet.EndUpdate;
 	End Try;
@@ -929,8 +1003,9 @@ Begin
     //Получение значений a, b, c
     //...
     Select Case a
-        Case 1: c := c + 5;
-        Case 2: c := c + 4;
+		Case 2 To 5, 6 To 7, 8: Return;
+        Case 1, 2, 3: c := c + 5;
+        Case 2 To 5: c := c + 4;
         Case 3: c := c + 3;
         Case 4: c := c + 2;
         Case 5: c := c + 1;
@@ -1044,3 +1119,311 @@ Begin
     a := "5 + 5" + 5.0 - 0.111;
     a := -5;
 end sub asd;
+
+{Interface IBPXmlSerializable
+	
+	Public Function SaveToXml(XmlElement: IXMLDOMElement; RefSaver: IBProcessMetabaseRefSaver): boolean;
+	
+	Public Function LoadFromXml(XmlElement: IXMLDOMElement; RefLoader: IBProcessMetabaseRefLoader): boolean;
+	
+End Interface IBPXmlSerializable;}
+
+Class BProcessMetabaseReferences: Object
+	
+	Protected _objectReferences: IMetabaseCustomObjectReferences;
+	Protected _processVersion: IBProcessMetadataVersionInfo;
+	
+	Protected Constructor Create(ObjectReferences: IMetabaseCustomObjectReferences; ProcessVersion: IBProcessMetadataVersionInfo);
+	Begin
+		_objectReferences := ObjectReferences;
+		_processVersion := ProcessVersion;
+	End Constructor Create;
+	
+End Class BProcessMetabaseReferences;
+
+Class BProcessMetabaseRefSaver: BProcessMetabaseReferences, IBProcessMetabaseRefSaver
+	
+	Public Shared Function CreateSaver(ObjectReferences: IMetabaseCustomObjectReferences; ProcessVersion: IBProcessMetadataVersionInfo): IBProcessMetabaseRefSaver;
+	Begin
+		If ProcessVersion.IsXmlRefsByIdVersion Then
+			Return New BProcessMetabaseIdRefSaver.Create(ObjectReferences, ProcessVersion);
+		Else
+			Return New BProcessMetabaseLegacyRefSaver.Create(ObjectReferences, ProcessVersion);
+		End If;
+	End Function CreateSaver;
+	
+	{Abstract} Public Function Save(Desc: IMetabaseObjectDescriptor): string;
+	Begin
+		Raise New Exception.Create("!");
+		Return "";
+	End Function Save;
+	
+End Class BProcessMetabaseRefSaver;
+
+Class BProcessMetabaseRefLoader: BProcessMetabaseReferences, IBProcessMetabaseRefLoader
+	
+	Public Shared Function CreateLoader(ObjectReferences: IMetabaseCustomObjectReferences; ProcessVersion: IBProcessMetadataVersionInfo): IBProcessMetabaseRefLoader;
+	Begin
+		If ProcessVersion.IsXmlRefsByIdVersion Then
+			Return New BProcessMetabaseIdRefLoader.Create(ObjectReferences, ProcessVersion);
+		Else
+			Return New BProcessMetabaseLegacyRefLoader.Create(ObjectReferences, ProcessVersion);
+		End If;
+	End Function CreateLoader;
+	
+	{Abstract} Public Function Load(RefId: variant; Type: BPMetabaseReferenceType): IMetabaseObjectDescriptor;
+	Begin
+		Raise New Exception.Create("!");
+		Return Null;
+	End Function Load;
+	
+End Class BProcessMetabaseRefLoader;
+
+
+Class BProcessMetabaseIdRefSaver: BProcessMetabaseRefSaver
+	
+	_addedObjects: IHashtable; // ключ - дескриптор, значение - идентификатор референса
+	
+	Friend Constructor Create(ObjectReferences: IMetabaseCustomObjectReferences; ProcessVersion: IBProcessMetadataVersionInfo);
+	Begin
+		Inherited Create(ObjectReferences, ProcessVersion);
+		_addedObjects := New Hashtable.Create;
+	End Constructor Create;
+	
+	Public Function Save(Desc: IMetabaseObjectDescriptor): string;
+	Var
+		refId: string;
+	Begin
+		refId := _addedObjects(Desc);
+		If refId = "" Then
+			refId := _objectReferences.Add(Desc).Id;
+			_addedObjects.Add(Desc, refId);
+		End If;
+		
+		Return refId;
+	End Function Save;
+	
+End Class BProcessMetabaseIdRefSaver;
+
+Class BProcessMetabaseIdRefLoader: BProcessMetabaseRefLoader
+	
+	Friend Constructor Create(ObjectReferences: IMetabaseCustomObjectReferences; ProcessVersion: IBProcessMetadataVersionInfo);
+	Begin
+		Inherited Create(ObjectReferences, ProcessVersion);
+	End Constructor Create;
+	
+	Public Function Load(RefId: variant; Type: BPMetabaseReferenceType): IMetabaseObjectDescriptor;
+	Var
+		ref: IMetabaseCustomObjectReference;
+	Begin
+		If RefId.VarType = ForeVariantType.String Then
+			ref := _objectReferences.FindById(RefId);
+			If ref <> Null Then
+				Return ref.Object;
+			End If;
+		End If;
+		
+		Return Null;
+	End Function Load;
+	
+End Class BProcessMetabaseIdRefLoader;
+
+Class BProcessMetabaseLegacyRefSaver: BProcessMetabaseRefSaver
+	
+	_dimList, _formList, _calcObjList, _procList, _moduleList, _authObjList, _schemaList, _etlObjList, _emailDocList: ArrayList;
+	_authObjClass, _calcObjClass, _procClass, _frmClass: integer;
+
+	Friend Constructor Create(ObjectReferences: IMetabaseCustomObjectReferences; ProcessVersion: IBProcessMetadataVersionInfo);
+	Begin
+		Inherited Create(ObjectReferences, ProcessVersion);
+		
+		_dimList := New ArrayList.Create;
+		_formList := New ArrayList.Create;
+		_authObjList := New ArrayList.Create;
+		_calcObjList := New ArrayList.Create;
+		_procList := New ArrayList.Create;
+		_moduleList := New ArrayList.Create;
+		_schemaList := New ArrayList.Create;
+		_etlObjList := New ArrayList.Create;
+		_emailDocList := New ArrayList.Create;
+		
+		_authObjClass := BProcessCommon.GetCustomClassCid(BPClasses.AuthorityObject);
+		_calcObjClass := BProcessCommon.GetCustomClassCid(BPClasses.Algorithm);
+		_procClass := BProcessCommon.GetCustomClassCid(BPClasses.Process);
+		_frmClass := BProcessCommon.GetCustomClassCid(BPClasses.Document_V3);
+	End Constructor Create;
+	
+	Public Function Save(Desc: IMetabaseObjectDescriptor): string;
+	Var
+		classId: integer;
+		index: integer = -1;
+	Begin
+		classId := Desc.ClassId;
+		If classId = _authObjClass Then
+			index := GetIndexOf(_authObjList, Desc);
+		Elseif classId = _calcObjClass Then
+			index := GetIndexOf(_calcObjList, Desc);
+		Elseif classId = _procClass Then
+			index := GetIndexOf(_procList, Desc);
+		Elseif (classId = MetabaseObjectClass.KE_CLASS_PROCEDURALREPORT) Or (classId = _frmClass) Then
+			index := GetIndexOf(_formList, Desc);
+		Elseif (classId = MetabaseObjectClass.KE_CLASS_MODULE) Or (classId = MetabaseObjectClass.KE_CLASS_FORM) Or (classId = MetabaseObjectClass.KE_CLASS_ASSEMBLY) Then
+			index := GetIndexOf(_moduleList, Desc);
+		Elseif BProcessParams.AllowedClasses.Contains(classId) Then
+			index := GetIndexOf(_dimList, Desc);
+		Elseif classId = MetabaseObjectClass.KE_CLASS_DIMSELECTIONSCHEMA Then
+			index := GetIndexOf(_schemaList, Desc);
+		Elseif classId = MetabaseObjectClass.KE_CLASS_ETLTASK Then
+			index := GetIndexOf(_etlObjList, Desc);
+		Elseif classId = MetabaseObjectClass.KE_CLASS_DOCUMENT Then
+			index := GetIndexOf(_emailDocList, Desc);
+		End If;
+
+		Return index.ToString;
+	End Function Save;
+	
+	Function GetIndexOf(List: IArrayList; Desc: IMetabaseObjectDescriptor): integer;
+	Var
+		i: integer;
+	Begin
+		i := List.IndexOf(Desc);
+		If i = -1 Then
+			_objectReferences.Add(Desc);
+			i := List.Add(Desc);
+		End If;
+		
+		Return i;
+	End Function GetIndexOf;
+		
+End Class BProcessMetabaseLegacyRefSaver;
+
+Class BProcessMetabaseLegacyRefLoader: BProcessMetabaseRefLoader
+	
+	_dimList, _formList, _calcObjList, _procList, _moduleList, _authObjList, _schemaList, _etlObjList, _emailDocList: ArrayList;
+	_callbackAssemblyLoaded: boolean;
+	_authObjClass, _calcObjClass, _procClass, _frmClass: integer;
+
+	Friend Constructor Create(ObjectReferences: IMetabaseCustomObjectReferences; ProcessVersion: IBProcessMetadataVersionInfo);
+	Begin
+		Inherited Create(ObjectReferences, ProcessVersion);
+		
+		_dimList := New ArrayList.Create;
+		_formList := New ArrayList.Create;
+		_authObjList := New ArrayList.Create;
+		_calcObjList := New ArrayList.Create;
+		_procList := New ArrayList.Create;
+		_moduleList := New ArrayList.Create;
+		_schemaList := New ArrayList.Create;
+		_etlObjList := New ArrayList.Create;
+		_emailDocList := New ArrayList.Create;
+		
+		_callbackAssemblyLoaded := False;
+		
+		_authObjClass := BProcessCommon.GetCustomClassCid(BPClasses.AuthorityObject);
+		_calcObjClass := BProcessCommon.GetCustomClassCid(BPClasses.Algorithm);
+		_procClass := BProcessCommon.GetCustomClassCid(BPClasses.Process);
+		_frmClass := BProcessCommon.GetCustomClassCid(BPClasses.Document_V3);
+		
+		ReadReferencesToLists;
+	End Constructor Create;
+	
+	Public Function Load(RefId: Variant; Type: BPMetabaseReferenceType): IMetabaseObjectDescriptor;
+	Var
+		index: integer;
+		s: String;
+	Begin
+		Try
+			If Not RefId.IsNull And Not RefId.IsEmpty And Integer.TryParse(RefId, index) Then
+				Select Case Type
+					Case BPMetabaseReferenceType.AuthObject:
+						Return _authObjList(index) As IMetabaseObjectDescriptor;
+						
+					Case BPMetabaseReferenceType.CalcObj:
+						Return _calcObjList(index) As IMetabaseObjectDescriptor;
+						
+					Case BPMetabaseReferenceType.Process:
+						Return _procList(index) As IMetabaseObjectDescriptor;
+						
+					Case BPMetabaseReferenceType.InputForm:
+						Return _formList(index) As IMetabaseObjectDescriptor;
+						
+					Case BPMetabaseReferenceType.ForeAssembly:
+						
+						If Not _processVersion.IsCorrectIndexOfModuleVersion And _callbackAssemblyLoaded Then
+							index := index + 1;
+						End If;	
+						
+						If (index < _moduleList.Count) Then
+							//1502715
+							//If st.Method <> "" Then
+							//	ParseBindings(StepXML, st);
+							//End If;
+							Return _moduleList(index) As IMetabaseObjectDescriptor;
+						End If;
+						
+					Case BPMetabaseReferenceType.CallbackAssembly:
+						_callbackAssemblyLoaded := True;
+						Return _moduleList(index) As IMetabaseObjectDescriptor;
+						
+					Case BPMetabaseReferenceType.Dimension:
+						Return _dimList(index) As IMetabaseObjectDescriptor;
+						
+					Case BPMetabaseReferenceType.DimSchema:
+						Return _schemaList(index) As IMetabaseObjectDescriptor;
+						
+					Case BPMetabaseReferenceType.EtlTask:
+						Return _EtlObjList(index) As IMetabaseObjectDescriptor;
+						
+					Case BPMetabaseReferenceType.Document:
+						Return _EmailDocList(index) As IMetabaseObjectDescriptor;
+				End Select;
+			Elseif Not RefId.IsNull And Not RefId.IsEmpty And (Type = BPMetabaseReferenceType.CallbackAssembly) And (RefId.VarType = ForeVariantType.String) Then 
+					s := RefId As String;
+					If String.ToUpper(s).StartsWith("REF") Then
+						s := string.Remove(s, 0, 3);					
+					End If;
+					If Integer.TryParse(s, index) Then
+						_callbackAssemblyLoaded := True;
+						Return _moduleList(index - 1) As IMetabaseObjectDescriptor;
+					End If;			
+			End If;
+		Except On e: Exception Do
+			Debug.Fail("Ошибка при загрузке ссылки типа " + Type.ToString + ": " + ExceptionToString(e));
+		End Try;
+		
+		Return Null;
+	End Function Load;
+	
+	Sub ReadReferencesToLists;
+	Var
+		ref: IMetabaseCustomObjectReference;
+		classId: integer;
+	Begin
+		For Each ref In _objectReferences Do
+			// при переносе пефами рефы могут быть пустые - такое случалось
+			If ref.Object <> Null Then
+				classId := ref.Object.ClassId;
+				If classId = _authObjClass Then
+					_authObjList.Add(ref.Object);
+				Elseif classId = _calcObjClass Then
+					_calcObjList.Add(ref.Object);
+				Elseif classId = _procClass Then
+					_procList.Add(ref.Object);
+				Elseif (classId = MetabaseObjectClass.KE_CLASS_PROCEDURALREPORT) Or (classId = _frmClass) Then
+					_formList.Add(ref.Object);
+				Elseif (classId = MetabaseObjectClass.KE_CLASS_MODULE) Or (classId = MetabaseObjectClass.KE_CLASS_FORM) Or (classId = MetabaseObjectClass.KE_CLASS_ASSEMBLY) Then
+					_moduleList.Add(ref.Object);
+				Elseif BProcessParams.AllowedClasses.Contains(classId) Then
+					_dimList.Add(ref.Object);
+				Elseif classId = MetabaseObjectClass.KE_CLASS_DIMSELECTIONSCHEMA Then
+					_schemaList.Add(ref.Object);
+				Elseif classId = MetabaseObjectClass.KE_CLASS_ETLTASK Then
+					_etlObjList.Add(ref.Object);
+				Elseif classId = MetabaseObjectClass.KE_CLASS_DOCUMENT Then
+					_emailDocList.Add(ref.Object);
+				End If;
+			End If;
+		End For;
+	End Sub ReadReferencesToLists;
+	
+End Class BProcessMetabaseLegacyRefLoader;

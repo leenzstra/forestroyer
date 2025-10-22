@@ -1,6 +1,6 @@
+import re
 from lark import v_args, Token
 from lark.visitors import Transformer
-import itertools
 
 
 class ClassDeclarationsTransformer(Transformer):
@@ -77,8 +77,8 @@ class ClassDeclarationsTransformer(Transformer):
         is_paramarray = children[1] != None
 
         for ch in children:
-            if isinstance(ch, Token) and ch.type == "WORD":
-                names.append(ch.value)
+            if isinstance(ch, dict) and ch["_type"] == "variable":
+                names.append(ch)
 
         for name in names:
             params.append(
@@ -105,8 +105,8 @@ class ClassDeclarationsTransformer(Transformer):
         fields = []
 
         for ch in children:
-            if isinstance(ch, Token) and ch.type == "WORD":
-                field_names.append(ch.value)
+            if isinstance(ch, dict) and ch["_type"] == "variable":
+                field_names.append(ch)
 
         for name in field_names:
             fields.append(
@@ -129,8 +129,8 @@ class ClassDeclarationsTransformer(Transformer):
             "name": children[3],
             "parameters": children[4],
             "return_type": children[5],
-            "get_body": "children[6]",
-            "set_body": "children[7]",
+            "get_body": children[6],
+            "set_body": children[7],
         }
 
     def method_declaration(self, children):
@@ -140,30 +140,62 @@ class ClassDeclarationsTransformer(Transformer):
             "shared": children[1],
             "callable": children[2],
             "name": children[3],
-            "parameters": "children[4]",
+            "parameters": children[4],
             "return_type": children[5],
             "body": children[6],
         }
 
     def method_body(self, children):
+        const_block = None
+        var_block = None
+
+        for ch in children:
+            if isinstance(ch, dict):
+                if ch["_type"] == "const_block":
+                    if not const_block:
+                        const_block = ch
+                    else:
+                        const_block["items"].extend(ch["items"])
+                elif ch["_type"] == "var_block":
+                    if not var_block:
+                        var_block = ch
+                    else:
+                        var_block["items"].extend(ch["items"])
+
         return {
             "_type": "method_body",
-            "const_block": "children[0]",
-            "var_block": "children[1]",
-            "statements": children[3],
+            "const_block": const_block,
+            "var_block": var_block,
+            "statements": children[-2],
+        }
+
+    def const_block(self, children):
+        return {
+            "_type": "const_block",
+            "access_modifier": children[0],
+            "items": children[1],
+        }
+
+    def const_list(self, children):
+        return children
+
+    def const_declaration(self, children):
+        return {
+            "_type": "const_declaration",
+            "name": children[0],
+            "value": children[1],
         }
 
     def statement_list(self, children):
         return children  # children
 
     def statement(self, children):
-
         if children:
             stmt = children[0]
-            if isinstance(stmt, Token) and stmt.type == "WORD":
+            if isinstance(stmt, dict) and stmt["_type"] in ("word", "variable"):
                 return {
                     "_type": "method_call",
-                    "method": stmt.value,
+                    "method": stmt,
                     "args": None,
                 }
 
@@ -203,7 +235,11 @@ class ClassDeclarationsTransformer(Transformer):
         }
 
     def member_access(self, children):
-        return {"_type": "member_access", "object": children[0], "member": children[1]}
+        return {
+            "_type": "member_access",
+            "object": children[0],
+            "member": children[1],
+        }
 
     def return_statement(self, children):
         return {
@@ -247,38 +283,173 @@ class ClassDeclarationsTransformer(Transformer):
         }
 
     def method_call(self, children):
-        return {"_type": "method_call", "method": children[0], "args": children[1]}
+        return {
+            "_type": "method_call",
+            "method": children[0],
+            "args": children[1],
+        }
 
     def expression(self, children):
-        items = []
-
         return {
             "_type": "expression",
+            "left": children[0],
+            "op": children[1],
+            "right": children[2],
         }
 
     def foreach_statement(self, children):
         return {
             "_type": "for_each_statement",
+            "element": children[2],
+            "list": children[4],
+            "statements": children[6],
         }
 
     def for_statement(self, children):
+        start_stmt = children[1]
+        end_stmt = children[3]
+        step_stmt = None
+        statements = None
+
+        for i, ch in enumerate(children):
+            if isinstance(ch, Token):
+                if ch.type == "STEP":
+                    step_stmt = children[i + 1]
+                elif ch.type == "DO":
+                    statements = children[i + 1]
+
         return {
             "_type": "for_statement",
+            "start": start_stmt,
+            "end": end_stmt,
+            "step": step_stmt,
+            "statements": statements,
+        }
+
+    def break_statement(self, _):
+        return {
+            "_type": "break_statement",
+        }
+
+    def continue_statement(self, _):
+        return {
+            "_type": "continue_statement",
+        }
+
+    def raise_statement(self, children):
+        return {
+            "_type": "raise_statement",
+            "expression": children[1],
+        }
+
+    def dispose_statement(self, children):
+        return {
+            "_type": "dispose_statement",
+            "expression": children[1],
         }
 
     def select_block(self, children):
+        select_var = children[0]
+        cases = []
+        else_stmts = None
+
+        i = 1
+        while i < len(children) - 1:
+            ch = children[i]
+            if isinstance(ch, Token) and ch.type == "ELSE":
+                else_stmts = children[i + 1]
+            else:
+                cases.append(
+                    {
+                        "case": ch,
+                        "statements": children[i + 1],
+                    }
+                )
+            i += 2
+
         return {
             "_type": "select_block",
+            "select_var": select_var,
+            "cases": cases,
+            "else": else_stmts,
+        }
+
+    def lov_case_arg_list(self, children):
+        return children
+
+    def lov_case_arg(self, children):
+        return children[0]
+
+    def literal_or_var(self, children):
+        return children[0]
+
+    def lov_range_expression(self, children):
+        return {
+            "_type": "lov_range_expression",
+            "from": children[0],
+            "to": children[2],
         }
 
     def try_block(self, children):
+        excepts = []
+        else_statements = []
+        finally_statements = []
+        statements = []
+
+        except_idx = -1
+
+        for i, ch in enumerate(children):
+            if isinstance(ch, Token):
+                if ch.type == "EXCEPT":
+                    except_idx = i
+                elif ch.type == "TRY" and not statements:
+                    statements = children[i + 1]
+                elif ch.type == "ELSE":
+                    else_statements = children[i + 1]
+                elif ch.type == "FINALLY":
+                    finally_statements = children[i + 1]
+
+        if except_idx != -1:
+            while except_idx < len(children):
+                ch = children[except_idx]
+                if isinstance(ch, Token):
+                    if ch.type == "ON":
+                        excepts.append(
+                            {
+                                "name": children[except_idx + 1],
+                                "exception_type": children[except_idx + 2],
+                                "statements": children[except_idx + 4],
+                            }
+                        )
+                        except_idx += 4
+                elif (
+                    isinstance(ch, list)
+                    and isinstance(children[except_idx - 1], Token)
+                    and children[except_idx - 1].type == "EXCEPT"
+                ):
+                    excepts.append(
+                        {
+                            "name": None,
+                            "exception_type": None,
+                            "statements": ch,
+                        }
+                    )
+                except_idx += 1
+
         return {
             "_type": "try_block",
+            "statements": statements,
+            "excepts": excepts,
+            "else": else_statements,
+            "finally": finally_statements,
         }
 
     def term(self, children):
         return {
             "_type": "term",
+            "op": children[1],
+            "left": children[0],
+            "right": children[2],
         }
 
     def factor(self, children):
@@ -297,8 +468,82 @@ class ClassDeclarationsTransformer(Transformer):
     def unary_op(self, children):
         return children[0]
 
+    def comparison_op(self, children):
+        return children[0]
+
     def inherited_call(self, children):
         return {
             "_type": "inherited_call",
             "expression": children[1],
         }
+
+    def property_get(self, children):
+        return {
+            "_type": "property_get",
+            "body": children[0],
+        }
+
+    def property_set(self, children):
+        return {
+            "_type": "property_set",
+            "body": children[0],
+        }
+
+    def var_block(self, children):
+        return {
+            "_type": "var_block",
+            "access_modifier": children[0],
+            "items": children[1],
+        }
+
+    def variables_list(self, children):
+        return [x for xs in children for x in xs]
+
+    def variable_declaration(self, children):
+        var_names = []
+        var_default_values = []
+        vars = []
+        var_type = None
+
+        array_regex = r"^((Array Of \w*\[\d+\])|(Array Of \w*)|(Array\[\d+\])|(Array))$"
+        is_array = False
+
+        for ch in children:
+            if isinstance(ch, dict):
+                if ch["_type"] == "variable":
+                    var_names.append(ch)
+                elif ch["_type"] == "type":
+                    var_type = ch["value"]
+                    is_array = (
+                        re.search(array_regex, var_type, flags=re.IGNORECASE) != None
+                    )
+                else:
+                    var_default_values.append(ch)
+
+        for name in var_names:
+            vars.append(
+                {
+                    "_type": "variable_declaration",
+                    "name": name,
+                    "type": var_type,
+                    "default_value": (
+                        var_default_values
+                        if is_array
+                        else var_default_values[0] if var_default_values else None
+                    ),
+                }
+            )
+
+        return vars
+
+    def VARIABLE(self, token):
+        return {"_type": "variable", "value": token}
+
+    def LITERAL(self, token):
+        return {"_type": "literal", "value": token}
+
+    def WORD(self, token):
+        return {"_type": "word", "value": token}
+
+    def TYPE(self, token):
+        return {"_type": "type", "value": token}

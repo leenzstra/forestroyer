@@ -22,8 +22,3 @@ parser = Lark(
 tree = parser.parse(code, "unit")
 # print(tree)
 print(json.dumps(tree, ensure_ascii=False))
-
-# int_parser: In = parser.parse_interactive(code, "unit")
-# iter = int_parser.iter_parse()
-# for token in iter:
-#     print(token, token.type)

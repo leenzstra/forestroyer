@@ -10,25 +10,25 @@ property_get: GET method_body GET
 property_set: SET method_body SET
 
 method_declaration: [access_modifier] [SHARED] CALLABLE WORD parameter_list_optional [_COLON TYPE] _SEMICOLON method_body CALLABLE WORD _SEMICOLON
-method_body: [method_const_block] [var_block] BEGIN statement_list END
+method_body: const_block* var_block* BEGIN statement_list END
 
 parameter_list_optional: ["(" [parameter_list] ")"]
 parameter_list: parameter (_SEMICOLON parameter)*
-parameter: [VAR] [PARAMARRAY] WORD ("," WORD)* _COLON TYPE ["=" LITERAL]
+parameter: [VAR] [PARAMARRAY] VARIABLE ("," VARIABLE)* _COLON TYPE ["=" literal_or_var]
 
-var_block: _VAR variables_list
+var_block: [access_modifier] _VAR variables_list
 variables_list: variable_declaration*
-variable_declaration: WORD ["," WORD]* _COLON TYPE ["=" (LITERAL | ("[" LITERAL ("," LITERAL)* "]"))] _SEMICOLON
+variable_declaration: VARIABLE ["," VARIABLE]* _COLON TYPE ["=" (simple_expression | ("[" simple_expression ("," simple_expression)* "]"))] _SEMICOLON
 
-field_declaration: [access_modifier] [SHARED] WORD ["," WORD]* _COLON TYPE _SEMICOLON
+field_declaration: [access_modifier] [SHARED] VARIABLE ["," VARIABLE]* _COLON TYPE _SEMICOLON
 
-const_block: [access_modifier] [_CONST] method_const_declaration
-method_const_block: _CONST method_const_declaration*
-method_const_declaration: WORD "=" LITERAL _SEMICOLON
+const_block: [access_modifier] _CONST const_list
+const_list: const_declaration*
+const_declaration: VARIABLE "=" simple_expression _SEMICOLON
 
 enum_declaration: [access_modifier] ENUM WORD enum_body END ENUM WORD _SEMICOLON
 enum_body: enum_value ("," enum_value)
-enum_value: WORD "=" LITERAL
+enum_value: VARIABLE "=" literal_or_var
 
 // Базовые конструкции
 statement_list: statement*
@@ -43,16 +43,20 @@ statement: (assignment_statement
     | break_statement 
     | select_block
     | try_block
+    | raise_statement
+    | dispose_statement
     | expression) _SEMICOLON
 
 for_statement: FOR assignment_statement TO expression (STEP LITERAL_INTEGER)? DO statement_list END FOR
-foreach_statement: FOR EACH WORD IN expression DO statement_list END FOR
+foreach_statement: FOR EACH VARIABLE IN expression DO statement_list END FOR
 continue_statement.1: CONTINUE
 break_statement.1: BREAK
+raise_statement: RAISE expression
+dispose_statement: DISPOSE expression
 
-try_block: TRY statement_list [EXCEPT ON WORD ":" WORD ("," WORD) DO] [EXCEPT] [FINALLY statement_list] END TRY
+try_block: TRY statement_list [(EXCEPT statement_list) | EXCEPT] (ON VARIABLE _COLON TYPE DO statement_list)* [ELSE statement_list] [FINALLY statement_list] END TRY
 
-select_block: SELECT CASE WORD (CASE LITERAL ("," LITERAL)* ("To" LITERAL)* ":" statement_list)* [ELSE statement_list] END SELECT
+select_block: _SELECT _CASE expression (_CASE lov_case_arg_list _COLON statement_list)* [ELSE statement_list] END _SELECT
 
 assignment_statement: atom _ASSIGNMENT expression
 return_statement: RETURN [expression]
@@ -62,7 +66,7 @@ if_statement: IF expression THEN statement_list (ELSEIF expression THEN statemen
 ternary_expression: expression _QUESTION_MARK expression _COLON expression
 
 ?expression: (simple_expression | ternary_expression | type_cast) (comparison_op expression)?
-?comparison_op: "=" | "<>" | "<" | "<=" | ">" | ">=" | IS_KEYWORD
+!comparison_op: "=" | "<>" | "<" | "<=" | ">" | ">=" | IS_KEYWORD
 
 ?simple_expression: term (add_op term)*
 !add_op: "+" | "-" | OR
@@ -79,10 +83,14 @@ ternary_expression: expression _QUESTION_MARK expression _COLON expression
 ?member_access: atom "." atom
 ?index_access: atom "[" expression "]"
 
-?atom: WORD | LITERAL | method_call | member_access | index_access | "(" expression ")" | constructor_call | inherited_call
+?atom: VARIABLE | LITERAL | method_call | member_access | index_access | "(" expression ")" | constructor_call | inherited_call
 type_cast: atom AS_KEYWORD TYPE
 
 argument_list: expression ("," expression)*
+lov_case_arg_list: lov_case_arg ("," lov_case_arg)*
+lov_case_arg: lov_range_expression | literal_or_var
+lov_range_expression: literal_or_var TO literal_or_var
+literal_or_var: VARIABLE | LITERAL
 
 access_modifier.1: PUBLIC | PRIVATE | PROTECTED | FRIEND | protected_friend
 protected_friend: (PROTECTED FRIEND)
@@ -95,6 +103,7 @@ LITERAL_STRING: /([ubf]?r?|r[ubf])("(?!"").*?(?<!\\)(\\\\)*?"|'(?!'').*?(?<!\\)(
 LITERAL_BOOLEAN: TRUE | FALSE
 
 CALLABLE.5: SUB | FUNCTION
+VARIABLE: WORD
 
 TYPE: BASE_TYPE | CLASS_TYPE | INTERFACE_TYPE
 INTERFACE_TYPE: "i"i + CLASS_TYPE
@@ -119,6 +128,12 @@ _ASSIGNMENT: ":="
 _QUESTION_MARK: "?"
 _VAR: VAR
 _CONST: CONST
+_SELECT: SELECT
+_CASE: CASE
+_TO: TO
+_END: END
+_BEGIN: BEGIN
+
 AND: "and"i
 OR: "or"i
 NOT: "not"i
@@ -168,6 +183,8 @@ SELECT: "Select"i
 CASE: "Case"i
 OF: "Of"i
 PARAMARRAY: "Paramarray"i
+RAISE: "Raise"i
+DISPOSE: "Dispose"i
 
 TYPE_INTEGER: "Integer"i
 TYPE_CHAR: "Char"i
@@ -176,7 +193,7 @@ TYPE_VARIANT: "Variant"i
 TYPE_DOUBLE: "Double"i
 TYPE_DATETIME: "DateTime"i
 TYPE_BOOLEAN: "Boolean"i
-TYPE_ARRAY: /(Array Of \w*)|(Array\[\d+\])|(Array)/i
+TYPE_ARRAY: /(Array Of \w*\[.+\])|(Array Of \w*)|(Array\[.+\])|(Array)/i
 TYPE_OBJECT: "Object"i
 TYPE_DECIMAL: "Decimal"i
 TYPE_CURRENCY: "Currency"i
@@ -192,3 +209,4 @@ WORD: /[a-zA-Z_][a-zA-Z0-9_]*/
 %ignore /\/\/[^\n]*/    // Однострочные комментарии
 %ignore /\/\/\/[^\n]*/
 %ignore /\/\*.*?\*\//    // Многострочные комментарии
+%ignore /\{(.|\r\n|\r|\n)*?}/    // Многострочные комментарии { }
