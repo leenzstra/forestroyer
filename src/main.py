@@ -20,5 +20,9 @@ parser = Lark(
 )
 
 tree = parser.parse(code, "unit")
-# print(tree)
-print(json.dumps(tree, ensure_ascii=False))
+print(tree)
+
+# with open("trees/test.json", "w+") as f:
+    # json.dump(tree, f, ensure_ascii=False)
+
+# TODO WITH WHILE """ NullPriority

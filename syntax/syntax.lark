@@ -1,27 +1,33 @@
-unit: (enum_declaration | const_block | method_declaration | class_def)*
+unit: (enum_declaration | const_block | method_declaration | class_def | interface_def)*
 
-class_def: [access_modifier] [SHARED] CLASS WORD _COLON TYPE ("," TYPE)* class_body END CLASS WORD _SEMICOLON
-class_body: (enum_declaration | const_block | method_declaration | constructor | field_declaration | property_declaration)*
+class_def: [access_modifier] [SHARED] CLASS WORD _COLON type ("," type)* class_body END CLASS WORD _SEMICOLON
+class_body: (enum_declaration | class_const_declaration | method_declaration | constructor | field_declaration | property_declaration)*
+
+interface_def: [access_modifier] INTERFACE WORD [_COLON] [INTERFACE_TYPE] interface_body END INTERFACE WORD _SEMICOLON
+interface_body: (interface_method_declaration | interface_property_declaration)*
+interface_method_declaration: [access_modifier] CALLABLE WORD parameter_list_optional [_COLON type] _SEMICOLON
+interface_property_declaration: [access_modifier] PROPERTY WORD parameter_list_optional _COLON type [GET] [SET] END PROPERTY WORD _SEMICOLON
 
 constructor: [access_modifier] CONSTRUCTOR WORD parameter_list_optional _SEMICOLON method_body CONSTRUCTOR WORD _SEMICOLON
 
-property_declaration: [access_modifier] [SHARED] PROPERTY WORD parameter_list_optional _COLON TYPE [property_get] [property_set] END PROPERTY WORD _SEMICOLON
+property_declaration: [access_modifier] [SHARED] PROPERTY WORD parameter_list_optional _COLON type [property_get] [property_set] END PROPERTY WORD _SEMICOLON
 property_get: GET method_body GET
 property_set: SET method_body SET
 
-method_declaration: [access_modifier] [SHARED] CALLABLE WORD parameter_list_optional [_COLON TYPE] _SEMICOLON method_body CALLABLE WORD _SEMICOLON
+method_declaration: [access_modifier] [SHARED] CALLABLE WORD parameter_list_optional [_COLON type] _SEMICOLON method_body CALLABLE WORD _SEMICOLON
 method_body: const_block* var_block* BEGIN statement_list END
 
 parameter_list_optional: ["(" [parameter_list] ")"]
 parameter_list: parameter (_SEMICOLON parameter)*
-parameter: [VAR] [PARAMARRAY] VARIABLE ("," VARIABLE)* _COLON TYPE ["=" literal_or_var]
+parameter: [VAR] [PARAMARRAY] VARIABLE ("," VARIABLE)* _COLON type ["=" literal_or_var]
 
 var_block: [access_modifier] _VAR variables_list
 variables_list: variable_declaration*
-variable_declaration: VARIABLE ["," VARIABLE]* _COLON TYPE ["=" (simple_expression | ("[" simple_expression ("," simple_expression)* "]"))] _SEMICOLON
+variable_declaration: VARIABLE ["," VARIABLE]* _COLON type ["=" (simple_expression | ("[" simple_expression ("," simple_expression)* "]"))] _SEMICOLON
 
-field_declaration: [access_modifier] [SHARED] VARIABLE ["," VARIABLE]* _COLON TYPE _SEMICOLON
+field_declaration: [access_modifier] [SHARED] VARIABLE ["," VARIABLE]* _COLON type ["=" expression] _SEMICOLON
 
+class_const_declaration: [access_modifier] _CONST const_declaration
 const_block: [access_modifier] _CONST const_list
 const_list: const_declaration*
 const_declaration: VARIABLE "=" simple_expression _SEMICOLON
@@ -54,9 +60,9 @@ break_statement.1: BREAK
 raise_statement: RAISE expression
 dispose_statement: DISPOSE expression
 
-try_block: TRY statement_list [(EXCEPT statement_list) | EXCEPT] (ON VARIABLE _COLON TYPE DO statement_list)* [ELSE statement_list] [FINALLY statement_list] END TRY
+try_block: TRY statement_list [(EXCEPT statement_list) | EXCEPT] (ON VARIABLE _COLON type DO statement_list)* [ELSE statement_list] [FINALLY statement_list] END TRY
 
-select_block: _SELECT _CASE expression (_CASE lov_case_arg_list _COLON statement_list)* [ELSE statement_list] END _SELECT
+select_block: _SELECT _CASE expression (_CASE (lov_case_arg_list) _COLON statement_list)* [ELSE statement_list] END _SELECT
 
 assignment_statement: atom _ASSIGNMENT expression
 return_statement: RETURN [expression]
@@ -84,18 +90,18 @@ ternary_expression: expression _QUESTION_MARK expression _COLON expression
 ?index_access: atom "[" expression "]"
 
 ?atom: VARIABLE | LITERAL | method_call | member_access | index_access | "(" expression ")" | constructor_call | inherited_call
-type_cast: atom AS_KEYWORD TYPE
+type_cast: atom AS_KEYWORD type
 
 argument_list: expression ("," expression)*
 lov_case_arg_list: lov_case_arg ("," lov_case_arg)*
-lov_case_arg: lov_range_expression | literal_or_var
+lov_case_arg: lov_range_expression | atom
 lov_range_expression: literal_or_var TO literal_or_var
 literal_or_var: VARIABLE | LITERAL
 
 access_modifier.1: PUBLIC | PRIVATE | PROTECTED | FRIEND | protected_friend
 protected_friend: (PROTECTED FRIEND)
 
-LITERAL: LITERAL_STRING | LITERAL_NUMBER | LITERAL_BOOLEAN | NULL
+LITERAL: LITERAL_STRING | LITERAL_NUMBER | LITERAL_BOOLEAN | NULL | TYPE_SPECIAL_SYMBOL
 LITERAL_NUMBER: LITERAL_DOUBLE | LITERAL_INTEGER
 LITERAL_DOUBLE: /[-+]?\d+.\d+/
 LITERAL_INTEGER: /[-+]?[0-9][0-9]*|0/
@@ -105,17 +111,17 @@ LITERAL_BOOLEAN: TRUE | FALSE
 CALLABLE.5: SUB | FUNCTION
 VARIABLE: WORD
 
-TYPE: BASE_TYPE | CLASS_TYPE | INTERFACE_TYPE
-INTERFACE_TYPE: "i"i + CLASS_TYPE
+type: base_type | CLASS_TYPE | INTERFACE_TYPE
+INTERFACE_TYPE: /I[a-zA-Z_][a-zA-Z0-9_]*/i
 CLASS_TYPE: WORD
-BASE_TYPE: TYPE_INTEGER
+base_type: TYPE_INTEGER
     | TYPE_CHAR
     | TYPE_STRING
     | TYPE_VARIANT
     | TYPE_DOUBLE
     | TYPE_DATETIME
     | TYPE_BOOLEAN
-    | TYPE_ARRAY
+    | type_array
     | TYPE_OBJECT
     | TYPE_DECIMAL
     | TYPE_CURRENCY
@@ -185,6 +191,7 @@ OF: "Of"i
 PARAMARRAY: "Paramarray"i
 RAISE: "Raise"i
 DISPOSE: "Dispose"i
+INTERFACE.5: "Interface"i
 
 TYPE_INTEGER: "Integer"i
 TYPE_CHAR: "Char"i
@@ -193,12 +200,14 @@ TYPE_VARIANT: "Variant"i
 TYPE_DOUBLE: "Double"i
 TYPE_DATETIME: "DateTime"i
 TYPE_BOOLEAN: "Boolean"i
-TYPE_ARRAY: /(Array Of \w*\[.+\])|(Array Of \w*)|(Array\[.+\])|(Array)/i
+type_array: TYPE_ARRAY_VARIANT [OF type] ["[" lov_case_arg "]"]
 TYPE_OBJECT: "Object"i
 TYPE_DECIMAL: "Decimal"i
 TYPE_CURRENCY: "Currency"i
 TYPE_GUID: "Guid"i
 TYPE_INT64: "Int64"i
+TYPE_ARRAY_VARIANT: "Array"i
+TYPE_SPECIAL_SYMBOL: /\#[0-9]*/
 
 
 NAME: /[^\W\d]\w*/

@@ -37,6 +37,7 @@ class ClassDeclarationsTransformer(Transformer):
         items["property_declarations"] = []
         items["method_declarations"] = []
         items["constructor_declarations"] = []
+        items["const_declarations"] = []
         items["_type"] = "class_body"
 
         for ch in children:
@@ -49,11 +50,20 @@ class ClassDeclarationsTransformer(Transformer):
                     items["property_declarations"].append(ch)
                 elif ch.get("_type") == "method_declaration":
                     items["method_declarations"].append(ch)
+                elif ch.get("_type") == "class_const_declaration":
+                    items["const_declarations"].append(ch)
             if isinstance(ch, list):
                 for item in ch:
                     if item.get("_type") == "field_declaration":
                         items["field_declarations"].append(item)
         return items
+
+    def class_const_declaration(self, children):
+        return {
+            "_type": "class_const_declaration",
+            "access_modifier": children[0],
+            "declaration": children[1],
+        }
 
     def constructor(self, children):
         return {
@@ -513,10 +523,11 @@ class ClassDeclarationsTransformer(Transformer):
                 if ch["_type"] == "variable":
                     var_names.append(ch)
                 elif ch["_type"] == "type":
-                    var_type = ch["value"]
-                    is_array = (
-                        re.search(array_regex, var_type, flags=re.IGNORECASE) != None
-                    )
+                    var_type = ch
+                    is_array = False
+                elif ch["_type"] == "type_array":
+                    var_type = ch
+                    is_array = True
                 else:
                     var_default_values.append(ch)
 
@@ -545,5 +556,77 @@ class ClassDeclarationsTransformer(Transformer):
     def WORD(self, token):
         return {"_type": "word", "value": token}
 
-    def TYPE(self, token):
-        return {"_type": "type", "value": token}
+    def interface_def(self, children):
+        items = {}
+        items["_type"] = "interface_def"
+        items["access_modifier"] = children[0]
+        items["interface_name"] = children[2]
+        items["parent"] = children[3]
+
+        for ch in children:
+            if isinstance(ch, dict):
+                if ch.get("_type") == "interface_body":
+                    items["interface_body"] = ch
+
+        return items
+
+    def interface_body(self, children):
+        items = {}
+        items["interface_property_declarations"] = []
+        items["interface_method_declarations"] = []
+        items["_type"] = "interface_body"
+
+        for ch in children:
+            if isinstance(ch, dict):
+                if ch.get("_type") == "interface_property_declaration":
+                    items["interface_property_declarations"].append(ch)
+                elif ch.get("_type") == "interface_method_declaration":
+                    items["interface_method_declarations"].append(ch)
+
+        return items
+
+    def interface_method_declaration(self, children):
+        return {
+            "_type": "interface_method_declaration",
+            "access_modifier": children[0],
+            "callable": children[1],
+            "name": children[2],
+            "parameters": children[3],
+            "return_type": children[4],
+        }
+
+    def interface_property_declaration(self, children):
+        return {
+            "_type": "interface_property_declaration",
+            "access_modifier": children[0],
+            "name": children[2],
+            "parameters": children[3],
+            "return_type": children[4],
+            "get": children[5],
+            "set": children[6],
+        }
+
+    def INTERFACE_TYPE(self, token):
+        return {"_type": "interface", "value": token}
+
+    def CLASS_TYPE(self, token):
+        return {"_type": "class", "value": token}
+
+    def type_array(self, children):
+        arr_type = None
+        arr_size = None
+
+        for ch in children:
+            if isinstance(ch, dict):
+                if ch['_type'] == 'type':
+                    arr_type = ch
+
+        arr_size = children[3]
+
+        return {"_type": "type_array", "type": arr_type, "size": arr_size}
+
+    def base_type(self, children):
+        return children[0]
+
+    def type(self, children):
+        return {"_type": "type", "value": children[0]}

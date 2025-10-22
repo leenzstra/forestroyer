@@ -1,7 +1,20 @@
+Public Interface IFace
+	Public Property Name: String Get Set End Property Name;
+	Public Function Create(a: Integer): Integer;
+End Interface IFace;
+
+Public Interface IFace2: IFace
+End Interface IFace2;
+
+Public Interface IFace3: IFace2
+End Interface IFace3;
+
 /// <summary>
 /// 	Узел дерева зависимостей
 /// </summary>
-Public Class CDependencyTreeNode: Object
+Public Class CDependencyTreeNode: Object, IForeIface
+
+	arr: array of Integer[2];
 	
 	/// <summary>
 	/// 	Название узла
@@ -1427,3 +1440,681 @@ Class BProcessMetabaseLegacyRefLoader: BProcessMetabaseRefLoader
 	End Sub ReadReferencesToLists;
 	
 End Class BProcessMetabaseLegacyRefLoader;
+
+/// <summary>
+/// 	Генератор модулей unit-тестов
+/// </summary>
+Public Class CTestCaseGenerator: Object
+	// Идентификатор запроса для получения контекста сценария
+	Const CONTEXT_SCENARIO_QUERY_ID = "QRY_DTT_SCENARIOCONTEXT";	
+	// Хранилище шаблонов Fore-кода
+	Const FORE_RESOURCE_ID = "RES_DTT_UTGENERATIONFOREMETHOD";
+	// Шаблон наименования unit-теста (Номер теста, Идентификатор объекта, Тип события, Ключ события)
+	Const TEST_NAME_PATTERN = "Test{0}_{1}_{2}_{3}";
+	// Идентификатор базовой сборки механизма unit-тестирования
+	Const UNIT_TESTS_ASSEMBLY_PATH = "ASSM_DTT_APPTEST"; // "ASSM_UT_API";
+	// Базовый класс unit-теста
+	Const DEFAULT_TESTCASE_CLASS = "CTestCase";
+	// Таблица сгенерированных unit-тестов
+	Const UNIT_TESTS_LOG = "TBL_DTT_TEST";
+	// Таблица запусков генерации unit-тестов
+	Const UNIT_TESTS_GENERATOR_LOG = "TBL_DTT_TESTSCENARIORELATION";
+		
+	_parent: IMetabaseObjectDescriptor;
+	_baseClassAssembly: IMetabaseObjectDescriptor;
+	_baseClass: String;
+	_classMethods: IStringList;
+	_testMethods: IStringList;
+	_testNum: Integer = 0;
+	_className: String;
+	_records: IArrayList;
+	_recordKey: Integer = -1;
+	_genKey: Integer;
+	_itemId: String;
+	_genSettings: CTestCaseGeneratorSettings;
+	
+	/// <summary>
+	/// 	Идентификатор таблицы запусков генерации unit-тестов
+	/// </summary>
+	Protected Property LogTableId: String
+		Get Begin Return UNIT_TESTS_GENERATOR_LOG; End Get
+	End Property LogTableId;
+	
+	/// <summary>
+	/// 	Идентификатор таблицы сгенерированных unit-тестов
+	/// </summary>
+	Protected Property TestsLogId: String
+		Get Begin Return UNIT_TESTS_LOG; End Get
+	End Property TestsLogId;
+	
+	/// <summary>
+	/// 	Идентификатор запроса получения сценария генерации unit-тестов 
+	/// </summary>
+	Protected Property ScenarioQueryId: String
+		Get Begin Return CONTEXT_SCENARIO_QUERY_ID; End Get
+	End Property ScenarioQueryId;
+	
+	/// <summary>
+	/// 	Папка или сборка для сохранения сгенерированного модуля
+	/// </summary>
+	Public Property Parent: IMetabaseObjectDescriptor
+		Get Begin
+			Return IsNull(_parent)
+				? MbExt.Mb.Root
+				: _parent;
+		End Get
+		Set	Begin
+			If Not IsNull(value) And Not IsNull(value.Namespace_) Then
+				Raise New CRootFolderExpectedException.Create(String.Format("{0} ({1})", value.Name, value.Id));
+			End If;
+		
+			_parent := value;
+		End Set
+	End Property Parent;
+	
+	/// <summary>
+	/// 	Дескриптор базовой сборки механизма unit-тестирования
+	/// </summary>
+	Public Property BaseClassAssembly: IMetabaseObjectDescriptor
+		Get Begin Return _baseClassAssembly; End Get
+		Set Begin _baseClassAssembly := value; End Set
+	End Property BaseClassAssembly;
+	
+	/// <summary>
+	/// 	Название базового класса методов применяемых в unit-тестах
+	/// </summary>
+	Public Property BaseClass: String
+		Get Begin
+			Return _baseClass.IsEmpty
+				? DEFAULT_TESTCASE_CLASS
+				: _baseClass;
+		End Get
+		Set	Begin
+			_baseClass := value;
+		End Set
+	End Property BaseClass;
+	
+	/// <summary>
+	/// 	Базовый конструктор генератора unit-тестов
+	/// </summary>
+	Public Constructor Create;
+	Begin
+		_classMethods := New StringList.Create;
+		_testMethods := New StringList.Create;		
+		_records := New ArrayList.Create;
+		_genSettings := New CTestCaseGeneratorSettings.Create;
+	End Constructor Create;
+	
+	/// <summary>
+	/// 	Создание модуля с unit-тестами
+	/// </summary>
+	/// <param name="scenarioId">Идентификатор сценария</param>
+	/// <param name="contextQueryExtraValues">Массив дополнительных значений параметров для запроса, формирующего контекст шагов сценария (Необязательный)</param>
+	/// <returns>Дескриптор сгенерированного модуля</returns>
+	Public Function CreateModule(scenarioId: Integer; Paramarray contextQueryExtraParamValues: Array): IMetabaseObjectDescriptor;
+	Var
+		content: IStringList;
+		object: IMetabaseObject;
+		module: IModule;
+		baseClassAssemblyRef: String;
+		contextQueryParams: Array;
+		references: String;
+	Begin
+		_genKey := GetMaxNumber(MbExt.ItemById(LogTableId, EXT_NAMESPACE_ID), 4) + 1;
+		contextQueryParams := IsNull(contextQueryExtraParamValues)
+			? AsArray(scenarioId)
+			: ConcatArrays(AsArray(scenarioId), contextQueryExtraParamValues);
+			// Исправлено для версии ФП 9
+			// : AsArray(scenarioId).Concat(contextQueryExtraParamValues) As Array;
+				
+		content := CreateModuleContent(contextQueryParams);
+		
+		object := MbExt.Create(MetabaseObjectClass.KE_CLASS_MODULE, Parent, True, True) As IMetabaseObject;
+		object.Id := MbExt.Mb.GenerateId(String.Format("UNIT_{0}_TESTS", _className), IsNull(Parent.Namespace_)? 0 : Parent.Namespace_.Key);
+		object.Name := String.Format("Класс тестирования {0}", _className);
+		
+		module := object As IModule;
+		module.Text := content.AsString;
+		If module.Standalone Then
+			references := "ALG_COMPONENT.P10002_ASM_METHODS_CORE;BPM;BPM_COMPONENT.P10002_B_PROCESS_CORE;" +
+				"BPM_COMPONENT.P10002_B_RESOURCES_HELPER;Collections;DEF_COMPONENT.ASM_INPUT_FORM_V3_CLASSES;DEF_COMPONENT.ASM_INPUT_FORM_V3_MODEL;" +
+				"Dal;Db;Dimensions;Etl;Express;Fore;Metabase;Rds;Report;Tab;Adhoc;Algo;" +
+				"CMP_DTT_APPLICATION.ASSM_DTT_TOOLS;" ;
+			_genSettings.Reopen;
+			If _genSettings.GetSettingValue(EGeneratorSetting.ImageComparison) Then
+				references := references + "CMP_DTT_APPLICATION.ASSM_DTT_IMAGECOMPARISON;";
+			End If;
+				
+			module.Assembly.References := references;
+			baseClassAssemblyRef := GetBaseAssemblyReference;
+			If Not baseClassAssemblyRef.IsEmpty Then
+				module.Assembly.References := String.Format("{0};{1}", module.Assembly.References, baseClassAssemblyRef);
+			End If;
+		End If;
+		
+		object.Save;
+		
+		// Запись в лог факта генерации модуля		
+		LogGenerationEvent(scenarioId, object);
+		// Запись в лог информации о сгенерированных тестах
+		DbExt.ExecuteBatchCommand(MbExt.ItemById(TestsLogId, EXT_NAMESPACE_ID), DatasetBatchCommand.Insert, _records);
+		
+		Return object;
+	End Function CreateModule;
+	
+	/// <summary>
+	/// 	Генерация имени класса unit-тестов
+	/// </summary>
+	/// <param name="values">Дополнительные значения, добавляемые в название класса</param>
+	/// <returns>Название класса</returns>
+	Function ComposeClassName(Paramarray values: Array): String;
+	Var
+		result: String;
+		parts: Array Of String;
+		i: Integer;
+	Begin		
+		parts := New String[values.Length];
+		For i := 0 To values.Length - 1 Do
+			parts[i] := TranslitString(CultureExt.FormatVariant(values[i]));
+		End For;
+		result := String.Join("", parts);
+		
+		Return String.Format("CUnitTest{0}{1}", result, MbExt.Mb.GenerateKey);
+	End Function ComposeClassName;
+	
+	/// <summary>
+	/// 	Создание тела модуля
+	/// </summary>
+	/// <param name="contextQueryParams">Параметры для получения контекста сценария генерации unit-тестов</param>
+	/// <returns>Список строк кода модуля</returns>
+	Function CreateModuleContent(Paramarray contextQueryParams: Array): IStringList;
+	Var
+		steps: IStringList;
+		content: String;
+		eventContext: CJsonContextObject;
+		moduleContent: IStringList;		
+	Begin
+		_className := ComposeClassName(contextQueryParams);
+		
+		moduleContent := New StringList.Create;
+		moduleContent.Add(String.Format("Class {0}: {1}", _className, BaseClass));
+		If Not IsNull(contextQueryParams) Then
+			_classMethods.Add(GetFore("CONSTRUCTOR",
+				String.Format("_generatorParamValues := AsArray({0});", FormatArray(contextQueryParams)))
+				);
+		End If;
+				
+		If BaseClass = DEFAULT_TESTCASE_CLASS Then
+			_classMethods.Add(GetFore("BASE_CLASS_BODY"));			
+		End If;
+		
+		_classMethods.Add("");
+		_classMethods.Add(GetFore("MAIN_CLASS_BODY"));
+		
+		steps := GetScenarioContext(contextQueryParams);
+		For Each content In steps Do
+			eventContext := Deserialize(content);
+			If eventContext.Id.IsEmpty Then
+				Continue;
+			End If;
+			
+			// Генерация кода unit-теста
+			AddTestMethod(eventContext);
+		End For;
+		
+		// Добавление кода методов класса
+		moduleContent.AddRange(_classMethods);
+		// Добавление кода unt-тестов
+		moduleContent.AddRange(_testMethods);
+		// Закрытие класса
+		moduleContent.Add(String.Format("End Class {0};", _className));
+		
+		Return moduleContent;
+	End Function CreateModuleContent;
+	
+	/// <summary>
+	/// 	Получение шагов сценария
+	/// </summary>
+	/// <param name="paramValues">Параметры команды получения сценария генерации unit-тестов</param>
+	/// <returns>Список шагов сценария (тестов)</returns>
+	Function GetScenarioContext(Paramarray paramValues: Array): IStringList;
+	Const CONTEXT_FIELD_ID = "CONTEXT";
+	Var
+		steps: IStringList;
+		dataset: IDatasetInstance;
+		field: IDatasetInstanceField;
+	Begin
+		steps := New StringList.Create;
+		dataset := DbExt.GetQueryResult(MbExt.ItemById(ScenarioQueryId, EXT_NAMESPACE_ID), paramValues);
+		Try
+			field := dataset.Fields.FindById(CONTEXT_FIELD_ID);
+			If IsNull(field) Then
+				Raise New CNotFoundFieldException.Create(CONTEXT_FIELD_ID, ScenarioQueryId);
+			End If;
+			
+			//While Not dataset.Eof Do
+			//	If field.Value.IsEmpty Then
+			//		Continue;
+			//	End If;
+			//	
+			//	steps.Add(field.Value);							
+			//	dataset.Next;
+			//End While;	
+		Finally
+			dataset.Close;
+		End Try;		
+		
+		Return steps;
+	End Function GetScenarioContext;
+	
+	/// <summary>
+	/// 	Десериализация контекста
+	/// </summary>
+	/// <param>Строковое представление контекста</param>
+	/// <returns>Десериализованный экземпляр контекста</returns>
+	Function Deserialize(content: String): CJsonContextObject;
+	Var
+		context: CJsonContextObject;			
+	Begin		
+		context := New CJsonContextObject.Create;
+		context.ReadFromString(content);
+		Select Case context.Type
+			Case EEventContextType.OnCellChange:
+				context := New CJsonOnCellChangeContext.Create;
+			Case EEventContextType.OnChangeControlValue:
+				context := New CJsonOnChangeControlValueContext.Create;				
+			Case EEventContextType.OnOpenReport:
+				context := New CJsonOnOpenReportContext.Create;
+			Case EEventContextType.OnTransferData:
+				context := New CJsonOnTransferDataContext.Create;	
+		End Select;
+					
+		context.ReadFromString(content);
+		Return context;
+	End Function Deserialize;
+	
+	/// <summary>
+	/// 	Получение порядкового номера теста
+	/// </summary>
+	/// <returns>Порядковый номер теста с дополнением нулями</returns>
+	Function GetNextTestNum: String;
+	Begin
+		_testNum := _testNum + 1;
+		Return String.PadLeft(_testNum.ToString, 2, '0');
+	End Function GetNextTestNum;
+	
+	/// <summary>
+	/// 	Получение ключа записи лога
+	/// </summary>
+	/// <returns>Ключ следующей записи лога</returns>
+	Function GetNextRecordKey: Integer;
+	Begin
+		If _recordKey < 0 Then
+			_recordKey := GetMaxNumber(MbExt.ItemById(TestsLogId, EXT_NAMESPACE_ID), 0);
+		End If;
+		
+		_recordKey := _recordKey + 1;
+		Return _recordKey;
+	End Function GetNextRecordKey;
+	
+	/// <summary>
+	/// 	Добавление в начало строки указанное количество табуляций
+	/// </summary>
+	/// <param name="source">Исходная строка</param>
+	/// <param name="tabCount">Количество табуляций</param>
+	/// <returns>Строка с табуляциями</returns>
+	Function TabLeft(source: String; tabCount: Integer): String;
+	Begin
+		Return String.PadLeft(source, source.Length + tabCount, #9);
+	End Function TabLeft;
+	
+	/// <summary>
+	/// 	Возвращает текст Fore-кода из ресурса	
+	/// </summary>
+	/// <param name="codeId">Идентификатор строки ресурса</param>
+	///	<param name="substitutes">Массив подставляемых значений в текст Fore-кода</param>
+	/// <returns>Отформатированный текст Fore-кода</returns>
+	Function GetFore(foreId: String; Paramarray substitutes: Array): String;
+	Begin		
+		Return FormatResourceString(MbExt.ItemById(FORE_RESOURCE_ID, EXT_NAMESPACE_ID), foreId, substitutes);
+	End Function GetFore;
+	
+	/// <summary>
+	/// 	Добавление метода unit-теста на основе контекста
+	/// </summary>
+	/// <param name="eventContext">Контекст unit-теста</param>
+	Sub AddTestMethod(eventContext: CJsonContextObject);
+	Begin
+		_testMethods.Add("");
+		
+		Select Case eventContext.Type
+			Case EEventContextType.OnOpenReport:
+				CreateOnOpenReportSub(eventContext As CJsonOnOpenReportContext);
+			Case EEventContextType.OnChangeControlValue:	
+				CreateOnChangeControlValueSub(eventContext As CJsonOnChangeControlValueContext);
+			Case EEventContextType.OnCellChange:
+				CreateOnCellChangeSub(eventContext As CJsonOnCellChangeContext);
+			Case EEventContextType.OnTransferData:	
+				CreateOnTransferDataSub(eventContext As CJsonOnTransferDataContext);
+		End Select;
+	End Sub AddTestMethod;
+	
+	/// <summary>
+	/// 	Формирование строкового представления параметров объекта репозитория.
+	/// 	Если параметр - массив, то создается дополнительная переменная.
+	///
+	///		Пример:
+	/// 	Вход:
+	/// 		paramValues = [5, "param", [1, 0, 1], 1, [1, 5]]
+	/// 	Выход:
+	/// 		varBlock = "var
+	/// 						v1: Array[3] = [1, 0, 1];
+	/// 						v2: Array[2] = [1, 5];"
+	/// 		paramsBlock = "5,"param",v1,1,v2"
+	/// </summary>
+	/// <param name="paramValues">Параметры объекта</param>
+	/// <param name="varBlock">Блок определения переменных (если в параметрах есть массивы)</param>
+	/// <param name="paramsBlock">Строка со списком параметров</param>
+	Sub ComposeParamValuesString(paramValues: IMetabaseObjectParamValues; Var varBlock: String; Var paramsBlock: String);
+	Var
+		vars: IStringList;
+		paramValue: IMetabaseObjectParamValue;
+		values: Array;
+		varIndex: Integer;
+	Begin
+		varBlock := "";
+		paramsBlock := "";				
+		If Not IsNull(paramValues) Then
+			For Each paramValue In paramValues Do
+				//With comboBoxDescriptor: BindingExt.GetBindingDimComboDescriptor(paramValue.Binding.AsString) Do
+				//	If IsNull(comboBoxDescriptor) Then
+				//		Continue;
+				//	End If;
+				//End With;
+				
+				If paramValue.IsArray Then
+					If IsNull(vars) Then
+						vars := New StringList.Create;
+						vars.Add("");
+						vars.Add(TabLeft("var", 1));
+					End If;
+					
+					values := paramValue.Value As Array;						
+					If values.Length > 0 Then
+						varIndex := vars.Count - 1;
+						paramsBlock := String.Format("{0}v{1},", paramsBlock, varIndex); 
+						vars.Add(String.Format(TabLeft("v{0}: Array[{1}] = [{2}];", 2), varIndex, values.Length, FormatArray(values)));						
+					Else
+						paramsBlock := String.Format("{0}Null,", paramsBlock); 	
+					End If;														
+				Else					
+					paramsBlock := String.Concat(paramsBlock, String.Concat(FormatValue(paramValue.Value), ","));
+				End If;				
+			End For;
+			If paramsBlock.EndsWith(",") Then
+				paramsBlock := String.Remove(paramsBlock, paramsBlock.Length - 1);									
+			End If;
+			If Not IsNull(vars) Then
+				varBlock := vars.AsString;
+			End If;
+		End If;						
+	End Sub ComposeParamValuesString;
+	
+	/// <summary>
+	/// 	Проверяет, является ли переданный объект формой ввода
+	/// </summary>
+	/// <param name="object">Проверяемый объект (ключ, идентификатор или дескриптор)</param>
+	/// <returns>True, если форма ввода, иначе False</returns>
+	Function IsDef(object: Variant): Boolean;
+	Begin
+		//With desc: MbExt.Parse(object) Do
+		//	If IsNull(desc) Then
+		//		Raise New CNotFoundObjectException.Create(VariantToString(object));
+		//	End If;
+		//	
+		//	Return desc.ClassId = DefExt.ClassId;
+		//End With;
+	End Function IsDef;
+	
+	/// <summary>
+	/// 	Приведение к строке и форматирование массива
+	/// </summary>
+	/// <param name="values">Массив значений</param>
+	/// <returns>Отформатированная строка</returns>
+	Function FormatArray(values: Array): String;
+	Var
+		v: Variant;
+		result: String;
+	Begin
+		If Not IsNull(values) Then
+			For Each v In values Do
+				result := String.Concat(result, String.Concat(FormatValue(v), ","));
+			End For;
+			result := String.Remove(result, result.Length - 1);
+		End If;
+		Return result;
+	End Function FormatArray;
+	
+	/// <summary>
+	/// 	Приведение к строке и форматирование переданного значения
+	/// </summary>
+	/// <param name="value">Значение</param>
+	/// <returns>Отформатированная строка</returns>
+	Function FormatValue(value: Variant): String;
+	Var
+		str: String;
+	Begin
+		str := CultureExt.FormatVariant(value);
+		If value.VarType = ForeVariantType.String Then
+			// Экранирование перевода каретки
+			//If str.IndexOf(CRLF) > -1 Then
+				//str := String.Replace(str, CRLF, """ + #13 + #10 + """);
+			//Elseif str.IndexOf(#10) > -1 Then
+				//str := String.Replace(str, #10, """ + #10 + """);	
+			//End If;			
+			// Экранирование двойной кавычки
+			//If str.IndexOf("""") > -1 Then
+			//	str := String.Replace(str, """", """""");
+			//End If;
+			
+			//str := String.Format("""{0}""", str);
+		Elseif value.VarType = ForeVariantType.Nulvalue Then
+			str := "Null";
+		End If;
+					
+		Return str;
+	End Function FormatValue;
+	
+	/// <summary>
+	/// 	Добавление информации о сгенерированном unit-тесте
+	/// </summary>
+	///	<param name="name">Наименование unit-теста</param>
+	/// <param name="id">Идентификатор unit-теста</param>
+	/// <param name="eventType">Ключ типа события</param>
+	Sub LogTest(name, id: String; eventType: Integer);
+	Var
+		record: Array;
+	Begin
+		record := AsArray(GetNextRecordKey, name, String.Format("{0}.{1}", _className, id), Null, eventType, _itemId, _genKey);
+		_records.Add(record);
+	End Sub LogTest;
+	
+	/// <summary>
+	/// 	Запись в лог факта генерации модуля
+	/// </summary>
+	/// <param name="scenarioKey">Ключ сценария генерации unit-теста</param>
+	/// <param name="module">Дескриптор сгенерированного модуля</param>
+	Sub LogGenerationEvent(scenarioKey: Integer; module: IMetabaseObjectDescriptor);
+	Var
+		records: IArrayList;
+	Begin
+		records := New ArrayList.Create;
+		
+		records.Add(AsArray(scenarioKey, DateTime.Now, module.Id, module.Name, _genKey));
+		DbExt.ExecuteBatchCommand(MbExt.ItemById(LogTableId, EXT_NAMESPACE_ID), DatasetBatchCommand.Insert, records);
+	End Sub LogGenerationEvent;
+	
+	//================================================== Имитация обработчиков событий ===================================================================	
+	
+	/// <summary>
+	/// 	Создание теста на открытие формы/отчета
+	/// </summary>
+	/// <param name="eventContext">Контекст события OnOpenReport</param>
+	Sub CreateOnOpenReportSub(eventContext: CJsonOnOpenReportContext);
+	Const
+		OPEN_PRX_SUB = "Prx";
+		OPEN_DEF_SUB = "Def";
+	Var
+		testName, subText, vars, params, openReportSub: String;
+	Begin
+		_itemId := eventContext.Id;
+		
+		testName := FormatFuncName(String.Format(TEST_NAME_PATTERN, GetNextTestNum, eventContext.Id, "OnOpenReport", eventContext.Type));
+		ComposeParamValuesString(eventContext.ParamValues, vars, params);
+		
+		openReportSub := IsDef(eventContext.Id)? OPEN_DEF_SUB : OPEN_PRX_SUB;
+		subText := GetFore("ON_OPEN_REPORT", String.Format("{0} ({1})", eventContext.Name, eventContext.Id),
+			testName, vars, eventContext.Id, params.IsEmpty ? "" : String.Concat(", ", params), openReportSub);
+		_testMethods.Add(subText);
+		
+		// Добавление информации в лог
+		LogTest("Открытие формы/отчета", testName, eventContext.Type);
+	End Sub CreateOnOpenReportSub;
+	
+	/// <summary>
+	/// 	Создание теста на смену отметки в ЭУ
+	/// </summary>
+	/// <param name="eventContext">Контекст события OnChangeControlValue</param>
+	Sub CreateOnChangeControlValueSub(eventContext: CJsonOnChangeControlValueContext);
+	Var
+		testName: String;		
+		subText: String;
+		controlSheetsFormatted: String = "Null";
+		sheet: Variant;
+		sheets: IStringList;
+	Begin
+		testName := FormatFuncName(String.Format(TEST_NAME_PATTERN, GetNextTestNum, ConcatStrings(AsStringArray(_itemId, eventContext.Id), "_", False), "OnChangeControlValue", eventContext.Type));
+		If Not IsNull(eventContext.ParamSheets) Then
+			sheets := New StringList.Create;
+			For Each sheet In eventContext.ParamSheets Do
+				//sheets.Add(String.Format("""{0}""", sheet));
+			End For;
+			controlSheetsFormatted := String.Format("AsArray({0})", sheets.Text(","));
+		End If;
+		
+		subText := GetFore("ON_CHANGE_CONTROL_VALUE", testName, eventContext.Name, eventContext.Id, eventContext.Description, EscapeQuotes(eventContext.SelectionXml), controlSheetsFormatted);
+		_testMethods.Add(subText);
+			
+		// Добавление информации в лог
+		//LogTest(String.Format("Смена отметки в ЭУ ""{0}""", eventContext.Name), testName, eventContext.Type);
+	End Sub CreateOnChangeControlValueSub;
+
+	/// <summary>
+	/// 	Создание теста на изменение значения ячейки
+	/// </summary>
+	/// <param name="eventContext">Контекст события OnOnCellChange</param>
+	Sub CreateOnCellChangeSub(eventContext: CJsonOnCellChangeContext);
+	Var
+		testName: String;		
+		subText: String;		
+	Begin
+		testName := FormatFuncName(String.Format(TEST_NAME_PATTERN, GetNextTestNum, ConcatStrings(AsStringArray(_itemId, eventContext.Name), "_", False), "OnCellChange", eventContext.Type));
+		subText := GetFore("ON_CELL_CHANGE", eventContext.Id, testName, eventContext.SheetIndex, FormatValue(eventContext.Value),
+			eventContext.Readonly, eventContext.RegionAddress, eventContext.IsFormula);
+		_testMethods.Add(subText);
+		// Добавление информации в лог
+		//LogTest(String.Format("Изменение значения в ячейке ""{0}""", eventContext.Id), testName, eventContext.Type);	
+	End Sub CreateOnCellChangeSub;
+	
+	/// <summary>
+	/// 	Создание теста на сохранение данных формы
+	/// </summary>
+	/// <param name="eventContext">Контекст события OnTransferData</param>
+	Sub CreateOnTransferDataSub(eventContext: CJsonOnTransferDataContext);
+	Var
+		testName: String;		
+		subText: String;		
+	Begin		
+		testName := FormatFuncName(String.Format(TEST_NAME_PATTERN, GetNextTestNum, eventContext.Id, "OnTransferData", eventContext.Type));
+		subText := GetFore("ON_TRANSFER_DATA", testName, String.Format("{0} ({1})", eventContext.Name, eventContext.Id));					
+		_testMethods.Add(subText);			
+		// Добавление информации в лог
+		LogTest("Сохранение данных", testName, eventContext.Type);		
+	End Sub CreateOnTransferDataSub;	
+	
+	/// <summary>
+	/// 	Получение полного идентификатора базовой сборки механизма unit-тестирования
+	/// </summary>
+	/// <returns>Полный идентификатор сборки</returns>
+	Function GetBaseAssemblyReference: String;
+	Begin
+		If IsNull(BaseClassAssembly) Then
+			BaseClassAssembly := MbExt.ItemById(UNIT_TESTS_ASSEMBLY_PATH, EXT_NAMESPACE_ID);
+		End If;
+		If Not IsNull(BaseClassAssembly) Then
+			return MbExt.GetObjectPath(BaseClassAssembly);
+		End If;
+		Return "";
+	End Function GetBaseAssemblyReference;
+	
+	/// <summary>
+	/// 	Форматирование названия метода с заменой символов, препятствующих компиляции (.?,<> и далее)
+	/// </summary>
+	/// <param name="template">Изначальное название метода</param>
+	/// <param name="replacer">Заменяющий символ/строка</param>
+	/// <param name="skipChars">Пропускаемые символы</param>
+	/// <returns>Отформатированное название метода</returns>
+	Public Function FormatFuncName(funcName: String; replacer: String = "_"; skipChars: String = "_"): String;
+	Var
+		name: String;
+		character: Char;
+		chars: IStringList;
+		i: Integer;
+	Begin
+		name := TranslitString(funcName);
+		
+		chars := New StringList.Create;
+		For i := 0 To name.Length - 1 Do
+			character := name.Chars(i);
+			
+			// Если символ пропускаемый, то просто добавляем его
+			If String.Contains(skipChars, character) Then
+				chars.Add(character);
+				Continue;
+			End If;
+			
+			// Ограничимся только англ. буквами и числами
+			chars.Add(character.IsLetterOrDigit And (Char.ASCII(character) < 128)? character : replacer);
+		End For;
+	
+		Return chars.Text("");
+	End Function FormatFuncName;
+	
+	/// <summary>
+	/// 	Объединение массива строк в одну строку
+	/// </summary>
+	/// <param name="values">Массив строк</param>
+	/// <param name="delimeter">Разделяющий символ/строка</param>
+	/// <param name="includeEmpty">Включать пустые строки в результат</param>
+	/// <returns>Строка</returns>
+	Function ConcatStrings(values: Array Of String; delimeter: String = ""; includeEmpty: Boolean = False): String;
+	Var
+		result, value: String;
+		nonEmptyValues: IStringList;
+	Begin
+		If IsNull(values) Or (values.Length = 0) Then
+			Return result;
+		End If;
+		
+		nonEmptyValues := New StringList.Create;
+		For Each value In values Do
+			value := String.Trim(value);
+			If Not value.IsEmpty Then
+				nonEmptyValues.Add(value);
+			End If;
+		End For;
+		
+		Return nonEmptyValues.Text(delimeter);
+	End Function ConcatStrings;
+	
+End Class CTestCaseGenerator;
